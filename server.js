@@ -109,22 +109,41 @@ function isTargetEffort(effort) {
   return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
 }
 
+function formatFastestLap(efforts) {
+  const fastest = efforts
+    .filter((effort) => Number(effort.elapsed_time) > 0)
+    .sort((a, b) => Number(a.elapsed_time) - Number(b.elapsed_time))[0];
+  if (!fastest) return null;
+  const seconds = Math.round(Number(fastest.elapsed_time));
+  const minutes = Math.floor(seconds / 60);
+  const remainder = String(seconds % 60).padStart(2, "0");
+  const speedMs = Number(fastest.average_speed) || Number(fastest.distance) / seconds;
+  const speedKmh = (speedMs * 3.6).toFixed(1);
+  return `${minutes}:${remainder} ${speedKmh} km/h`;
+}
+
 async function scanActivity(req, activityId) {
   const token = await accessToken(req);
   return scanActivityWithToken(token, activityId);
 }
 async function scanActivityWithToken(token, activityId) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
-  const lapCount = (activity.segment_efforts || []).filter(isTargetEffort).length;
+  const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
+  const lapCount = targetEfforts.length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = `Laps: ${lapCount}\nlapped.onrender.com`;
+  const fastestLap = formatFastestLap(targetEfforts);
+  const stamp = [
+    `laps: ${lapCount}`,
+    fastestLap && `fastest lap: ${fastestLap}`,
+    "lapped.onrender.com"
+  ].filter(Boolean).join("\n");
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
   const existing = (activity.description || "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
-    .replace(/(?:^|\n)Loops: \d+(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/g, "")
-    .replace(/(?:^|\n)Laps: \d+(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/g, "")
+    .replace(/(?:^|\n)Loops: \d+(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/gi, "")
+    .replace(/(?:^|\n)Laps: \d+(?:\nfastest lap: [^\n]+)?(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/gi, "")
     .replace(/(?:^|\n)L O O P S : \d+(?:\nlapped\.onrender\.com)?(?=\n|$)/g, "")
     .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
