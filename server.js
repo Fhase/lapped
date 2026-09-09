@@ -59,7 +59,7 @@ app.use(session({
     httpOnly: true,
     sameSite: "lax",
     secure: Boolean(process.env.RENDER_EXTERNAL_URL) || process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60 * 1000
+    maxAge: 30 * 24 * 60 * 60 * 1000
   }
 }));
 // The Render service address is kept only for infrastructure compatibility.
@@ -416,7 +416,7 @@ app.get("/auth/strava/complete", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), configured: !configError, segmentId: segmentId || null }));
+app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null }));
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
     if (!req.session.strava) return res.status(401).json({ available: false });

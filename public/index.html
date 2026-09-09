@@ -60,14 +60,17 @@
       </div>
     </section>
     <section class="lap-stats" id="lap-stats" hidden aria-live="polite">
-      <p>your laps</p>
-      <div>
+      <div class="lap-stats-heading">
+        <p>your laps</p>
+        <strong id="athlete-name"></strong>
+      </div>
+      <div class="lap-stats-values">
         <p><strong id="lifetime-laps">—</strong><span>lifetime laps</span></p>
         <p><strong id="ytd-laps">—</strong><span id="ytd-laps-label">ytd laps</span></p>
       </div>
     </section>
     <section class="notes">
-      <p class="example-label">example · strava description</p>
+      <p class="example-label">Example description</p>
       <div class="description-example" data-description-example aria-label="Example Strava activity description"></div>
       <p>Built for post-ride scrolling, not another training dashboard.</p>
     </section>
