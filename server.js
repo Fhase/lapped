@@ -17,12 +17,10 @@ const publicSiteHost = receiptSiteUrl.replace(/^www\./, "");
 // so those receipts are still replaced without publishing that legacy address.
 const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
-const lapStatsEnabled = true;
+const lapStatsEnabled = false;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
-const receiptOptionsStore = path.join(dataDir, "receipt-options.json");
-const defaultReceiptOptions = Object.freeze({ lapCount: true, fastestLap: true, lifetimeLaps: false, ytdLaps: false });
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -132,31 +130,11 @@ async function saveToken(token) {
   return writeEncryptedStore(tokenStore, tokens);
 }
 
-function normalizeReceiptOptions(value = {}) {
-  return Object.fromEntries(Object.keys(defaultReceiptOptions).map((key) => [key, Boolean(value[key] ?? defaultReceiptOptions[key])]));
-}
-
-async function receiptOptionsFor(athleteId) {
-  const options = await readEncryptedStore(receiptOptionsStore);
-  return normalizeReceiptOptions(options[athleteId]);
-}
-
-async function saveReceiptOptions(athleteId, value) {
-  const options = await readEncryptedStore(receiptOptionsStore);
-  const normalized = normalizeReceiptOptions(value);
-  options[athleteId] = normalized;
-  await writeEncryptedStore(receiptOptionsStore, options);
-  return normalized;
-}
-
 async function removeConnectedAthlete(athleteId) {
   if (!athleteId) return;
   const tokens = await readTokens();
   delete tokens[athleteId];
   await writeEncryptedStore(tokenStore, tokens);
-  const options = await readEncryptedStore(receiptOptionsStore);
-  delete options[athleteId];
-  await writeEncryptedStore(receiptOptionsStore, options);
   await clearLapStats(athleteId);
 }
 
@@ -415,27 +393,10 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   }
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const receiptOptions = await receiptOptionsFor(athleteId);
-  if (!Object.values(receiptOptions).some(Boolean)) return { lapCount, changed: false, description: activity.description ?? "" };
-  let lapStats = null;
-  if (lapStatsEnabled && (receiptOptions.lifetimeLaps || receiptOptions.ytdLaps)) {
-    try {
-      lapStats = await Promise.race([
-        getLapStats(token, athleteId, { includeYtd: receiptOptions.ytdLaps }),
-        new Promise((resolve) => setTimeout(() => resolve(null), 10000))
-      ]);
-    } catch (error) {
-      console.error("Lap stats lookup failed:", error.message);
-    }
-  }
   const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
-    lapCount: receiptOptions.lapCount ? lapCount : null,
-    fastestLap: receiptOptions.fastestLap ? fastestLap : null,
-    lifetimeLaps: receiptOptions.lifetimeLaps ? lapStats?.lifetime : null,
-    ytdLaps: receiptOptions.ytdLaps ? lapStats?.ytd : null,
-    ytdYear: receiptOptions.ytdLaps ? lapStats?.year : null,
-    options: receiptOptions
+    lapCount,
+    fastestLap
   });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
@@ -504,33 +465,6 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
-app.get("/api/receipt-options", async (req, res, next) => {
-  try {
-    if (!req.session.strava?.athlete?.id) return res.status(401).json({ error: "Connect Strava first." });
-    res.json(await receiptOptionsFor(req.session.strava.athlete.id));
-  } catch (error) { next(error); }
-});
-app.put("/api/receipt-options", async (req, res, next) => {
-  try {
-    if (!req.session.strava?.athlete?.id) return res.status(401).json({ error: "Connect Strava first." });
-    res.json(await saveReceiptOptions(req.session.strava.athlete.id, req.body));
-  } catch (error) { next(error); }
-});
-app.get("/api/lap-stats", async (req, res, next) => {
-  try {
-    if (!lapStatsEnabled) return res.json({ available: false, enabled: false });
-    if (!req.session.strava) return res.status(401).json({ available: false });
-    const token = await accessToken(req);
-    const athleteId = req.session.strava.athlete?.id;
-    const options = await receiptOptionsFor(athleteId);
-    if (!options.lifetimeLaps && !options.ytdLaps) return res.json({ available: false, enabled: false });
-    const stats = await getLapStats(token, athleteId, { includeYtd: options.ytdLaps });
-    res.json(stats || { available: false });
-  } catch (error) {
-    if (error.status === 429) return res.status(429).json({ available: false, rateLimited: true });
-    next(error);
-  }
-});
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, (req, res) => {
   const athletes = Object.values(req.connectedTokens).map((token) => token.athlete || {});
