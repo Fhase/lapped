@@ -1,11 +1,11 @@
 # Lapped
 
-[Lapped](https://lapped.onrender.com) is a small Strava companion for the High Park loop in Toronto. Connect Strava, finish the configured loop, and Lapped adds a simple receipt to the activity description:
+[Lapped](https://lapped.fit) is a small Strava companion for the High Park loop in Toronto. Connect Strava, finish the configured loop, and Lapped adds a simple receipt to the activity description:
 
 ```text
 laps: 14
 fastest lap: 2:38 · 42.3 km/h
-lapped.onrender.com
+lapped.fit
 ```
 
 If an activity has no completed effort for the configured High Park segment, Lapped leaves its description untouched. It preserves any rider-written description and replaces only its own receipt when a ride is rescanned.
@@ -52,7 +52,7 @@ STRAVA_VERIFY_TOKEN=
 
 `render.yaml` creates the web service and a 1 GB persistent disk for encrypted token data. In Render, enter the Strava client ID, client secret, and the owner athlete ID as protected environment variables. Set `APP_URL` to the public URL when using a custom domain. Then set that hostname as the Strava application's authorization callback domain and register `https://<your-host>/webhook` as the Strava webhook callback.
 
-The live Lapped deployment is at [lapped.onrender.com](https://lapped.onrender.com).
+The live Lapped deployment is at [lapped.fit](https://lapped.fit).
 
 ## Security reports
 
