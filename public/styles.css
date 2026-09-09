@@ -44,10 +44,7 @@ figcaption{color:var(--route-meta);position:relative;z-index:1}
 h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .connect-card p:not(.status){max-width:490px;line-height:1.4;margin:0;color:var(--muted);letter-spacing:-.015em}
 .actions{display:flex;align-items:flex-start;flex-direction:column;gap:13px}
-.button,button{background:var(--ink);border:0;color:var(--paper);font:500 15px Arial,Helvetica,sans-serif;letter-spacing:-.02em;padding:14px 16px;text-decoration:none;cursor:pointer}
-.button{display:inline-flex;align-items:center;gap:9px}
-.button .strava-mark{width:19px;height:19px;object-fit:contain}
-.button span{margin-left:25px;font-size:19px}
+.button,button{background:var(--ink);border:0;color:var(--paper);font:500 15px Arial,Helvetica,sans-serif;letter-spacing:-.02em;padding:14px 16px;text-decoration:none;cursor:pointer}.button{display:inline-flex;align-items:center;gap:12px;min-width:220px;min-height:52px}.button .strava-mark{width:19px;height:19px;object-fit:contain;flex:0 0 auto}.button>span:not(.button-label){margin-left:auto;font-size:19px}.button-label{white-space:nowrap}.button .button-label+.strava-mark{margin-left:auto}
 .actions small{color:var(--muted)}
 .notes{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:25px;padding:28px 0 0}
 .notes p{margin:0;line-height:1.35;font-size:14px;letter-spacing:-.01em}
