@@ -15,19 +15,22 @@ const tokenStore = path.join(dataDir, "tokens.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
+const sessionSecret = process.env.SESSION_SECRET || "change-me-before-production";
 // A short-lived server-side record keeps OAuth safe if a privacy extension strips
 // the session cookie during Strava's cross-site return.
 const pendingOAuthStates = new Map();
 // Hash of the original Lapped owner's Strava athlete ID. Render can override
 // this with ADMIN_ATHLETE_ID without placing a personal ID in source control.
 const defaultAdminAthleteHash = "cbed8490189459b6fb84700492174b34db9035e0cc8461fc5bf43a4fc1ecf4af";
+const adminCookieName = "lapped_admin";
+const adminCookieLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
 app.set("trust proxy", 1);
 app.use(express.json());
 app.use(session({
-  secret: process.env.SESSION_SECRET || "change-me-before-production",
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
   cookie: { sameSite: "lax", secure: process.env.NODE_ENV === "production" }
@@ -83,6 +86,40 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function isAdminAthlete(athleteId) {
+  const candidate = String(athleteId || "");
+  const configuredOwnerId = String(process.env.ADMIN_ATHLETE_ID || "");
+  return (configuredOwnerId && candidate === configuredOwnerId)
+    || crypto.createHash("sha256").update(candidate).digest("hex") === defaultAdminAthleteHash;
+}
+
+function signAdminCookie(payload) {
+  return crypto.createHmac("sha256", sessionSecret).update(payload).digest("hex");
+}
+
+function hasValidAdminCookie(req) {
+  const encoded = req.headers.cookie?.split(";").map((part) => part.trim())
+    .find((part) => part.startsWith(`${adminCookieName}=`))?.slice(adminCookieName.length + 1);
+  if (!encoded) return false;
+  const [athleteId, expiresAt, signature] = decodeURIComponent(encoded).split(".");
+  const payload = `${athleteId}.${expiresAt}`;
+  const expected = signAdminCookie(payload);
+  if (!athleteId || !Number.isFinite(Number(expiresAt)) || Number(expiresAt) < Date.now() || !signature || signature.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected)) && isAdminAthlete(athleteId);
+}
+
+function setAdminCookie(res, athleteId) {
+  const expiresAt = Date.now() + adminCookieLifetimeMs;
+  const payload = `${athleteId}.${expiresAt}`;
+  res.cookie(adminCookieName, `${payload}.${signAdminCookie(payload)}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: Boolean(process.env.RENDER_EXTERNAL_URL) || process.env.NODE_ENV === "production",
+    path: "/admin",
+    maxAge: adminCookieLifetimeMs
+  });
+}
+
 function adminPage(athletes) {
   const rows = athletes.map((athlete) => {
     const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
@@ -95,15 +132,17 @@ function adminPage(athletes) {
 
 async function requireAdmin(req, res, next) {
   try {
+    if (hasValidAdminCookie(req)) {
+      req.connectedTokens = await readTokens();
+      return next();
+    }
     if (!req.session.strava) {
       req.session.returnTo = "/admin";
       return res.redirect("/auth/strava");
     }
     const sessionAthleteId = String(req.session.strava.athlete?.id || "");
-    const configuredOwnerId = String(process.env.ADMIN_ATHLETE_ID || "");
-    const isDefaultOwner = crypto.createHash("sha256").update(sessionAthleteId).digest("hex") === defaultAdminAthleteHash;
-    const isConfiguredOwner = configuredOwnerId && sessionAthleteId === configuredOwnerId;
-    if (!isDefaultOwner && !isConfiguredOwner) return res.status(403).send("Admin access is not available for this Strava account.");
+    if (!isAdminAthlete(sessionAthleteId)) return res.status(403).send("Admin access is not available for this Strava account.");
+    setAdminCookie(res, sessionAthleteId);
     const tokens = await readTokens();
     req.connectedTokens = tokens;
     next();
