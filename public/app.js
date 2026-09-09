@@ -1,7 +1,7 @@
 import "./description-format.js";
 
 const status = document.querySelector("#status"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
-const lapStats = document.querySelector("#lap-stats"), athleteName = document.querySelector("#athlete-name"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
+const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -19,8 +19,10 @@ fetch("/api/status").then(r => r.json()).then(data => {
   if (!data.configured) { status.textContent = "Setup needed"; connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
   if (data.connected) {
     const name = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(" ");
-    status.textContent = name ? `Strava connected · ${name}` : "Strava connected";
-    if (name) athleteName.textContent = name;
+    athleteName.textContent = name || "Your laps";
+    onboarding.hidden = true;
+    connectedOverview.hidden = false;
+    descriptionExample.hidden = true;
     connect.hidden = true;
     disconnect.hidden = false;
     fetch("/api/lap-stats").then(r => r.ok ? r.json() : null).then(stats => {
@@ -28,7 +30,6 @@ fetch("/api/status").then(r => r.json()).then(data => {
       lifetimeLaps.textContent = stats.lifetime;
       ytdLaps.textContent = stats.ytd;
       ytdLapsLabel.textContent = `${stats.year} laps`;
-      lapStats.hidden = false;
     }).catch(() => {});
   }
   else status.textContent = "Ready to connect";
