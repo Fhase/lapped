@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: high-park-laps
+    name: lapped
     runtime: node
     plan: 0.5c-512mb
     buildCommand: npm ci

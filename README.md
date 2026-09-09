@@ -1,4 +1,4 @@
-# High Park Laps
+# Lapped
 
 A Strava companion and Chrome extension that writes `High Park laps: N` into a rider's activity description only when Strava reports one or more completed efforts for the configured High Park segment. If no effort is found, the activity description is not touched.
 
