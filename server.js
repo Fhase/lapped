@@ -17,12 +17,12 @@ const publicSiteHost = receiptSiteUrl.replace(/^www\./, "");
 // so those receipts are still replaced without publishing that legacy address.
 const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
-// Historical lap totals are intentionally paused to conserve Strava API usage.
-// Keep the implementation ready for a future re-enable once rate limits grow.
-const lapStatsEnabled = false;
+const lapStatsEnabled = true;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
+const receiptOptionsStore = path.join(dataDir, "receipt-options.json");
+const defaultReceiptOptions = Object.freeze({ lapCount: true, fastestLap: true, lifetimeLaps: false, ytdLaps: false });
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -130,6 +130,40 @@ async function saveToken(token) {
   const tokens = await readTokens();
   tokens[token.athlete.id] = token;
   return writeEncryptedStore(tokenStore, tokens);
+}
+
+function normalizeReceiptOptions(value = {}) {
+  return Object.fromEntries(Object.keys(defaultReceiptOptions).map((key) => [key, Boolean(value[key] ?? defaultReceiptOptions[key])]));
+}
+
+async function receiptOptionsFor(athleteId) {
+  const options = await readEncryptedStore(receiptOptionsStore);
+  return normalizeReceiptOptions(options[athleteId]);
+}
+
+async function saveReceiptOptions(athleteId, value) {
+  const options = await readEncryptedStore(receiptOptionsStore);
+  const normalized = normalizeReceiptOptions(value);
+  options[athleteId] = normalized;
+  await writeEncryptedStore(receiptOptionsStore, options);
+  return normalized;
+}
+
+async function removeConnectedAthlete(athleteId) {
+  if (!athleteId) return;
+  const tokens = await readTokens();
+  delete tokens[athleteId];
+  await writeEncryptedStore(tokenStore, tokens);
+  const options = await readEncryptedStore(receiptOptionsStore);
+  delete options[athleteId];
+  await writeEncryptedStore(receiptOptionsStore, options);
+  await clearLapStats(athleteId);
+}
+
+async function athleteIsStillConnected(athleteId) {
+  if (!athleteId) return false;
+  const tokens = await readTokens();
+  return Boolean(tokens[athleteId]);
 }
 
 async function readLapStats() {
@@ -299,10 +333,10 @@ async function countSegmentEfforts(token, start, end) {
   throw new Error("Strava segment effort pagination exceeded its safe limit.");
 }
 
-async function getLapStats(token, athleteId) {
+async function getLapStats(token, athleteId, { includeYtd = false } = {}) {
   const stats = await readLapStats();
   const cached = stats[athleteId];
-  if (cached?.version === 4) {
+  if (cached?.version === 5 && (!includeYtd || cached.hasYtd)) {
     if (cached.rateLimited && Date.now() < cached.retryAt) return cached;
     if (!cached.rateLimited && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
   }
@@ -313,24 +347,30 @@ async function getLapStats(token, athleteId) {
     if (!Number.isFinite(lifetime)) throw new Error("Strava returned 403: segment history unavailable");
     const now = new Date();
     const year = now.getUTCFullYear();
-    let ytd;
+    let ytd = null;
+    if (!includeYtd) {
+      const result = { available: true, lifetime, ytd, year, hasYtd: false, checkedAt: Date.now(), version: 5 };
+      stats[athleteId] = result;
+      await writeEncryptedStore(lapStatsStore, stats);
+      return result;
+    }
     try {
       ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
     } catch (error) {
       if (error.status !== 429) throw error;
       const retryAt = (Math.floor(Date.now() / (15 * 60 * 1000)) + 1) * 15 * 60 * 1000 + 1000;
-      const result = { available: true, lifetime, ytd: null, year, rateLimited: true, retryAt, checkedAt: Date.now(), version: 4 };
+      const result = { available: true, lifetime, ytd: null, year, hasYtd: false, rateLimited: true, retryAt, checkedAt: Date.now(), version: 5 };
       stats[athleteId] = result;
       await writeEncryptedStore(lapStatsStore, stats);
       return result;
     }
-    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now(), version: 4 };
+    const result = { available: true, lifetime, ytd, year, hasYtd: true, checkedAt: Date.now(), version: 5 };
     stats[athleteId] = result;
     await writeEncryptedStore(lapStatsStore, stats);
     return result;
   } catch (error) {
     if (!/Strava returned (?:401|403|404)/.test(error.message)) throw error;
-    stats[athleteId] = { available: false, checkedAt: Date.now(), version: 4 };
+    stats[athleteId] = { available: false, checkedAt: Date.now(), version: 5 };
     await writeEncryptedStore(lapStatsStore, stats);
     return null;
   }
@@ -354,7 +394,9 @@ function formatFastestLap(efforts) {
 }
 
 function hasLappedReceipt(description) {
-  return /(?:^|\r?\n)(?:(?:laps|loops):\s*\d+(?:\r?\nfastest lap:[^\r\n]+)?(?:\r?\n(?:lifetime laps:\s*\d+|\d{4} laps:\s*\d+))*\r?\n(?:https?:\/\/)?(?:www\.)?(?:lapped\.fit|lapped\.onrender\.com)|high park laps:\s*\d+)(?=\r?\n|$)/i.test(String(description || ""));
+  const receiptLine = "(?:laps:\\s*\\d+|fastest lap:[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)";
+  const receiptSite = "(?:https?:\\/\\/)?(?:www\\.)?(?:lapped\\.fit|lapped\\.onrender\\.com)";
+  return new RegExp(`(?:^|\\r?\\n)(?:${receiptLine})(?:\\r?\\n[^\\r\\n]+){0,4}\\r?\\n${receiptSite}(?=\\r?\\n|$)|(?:^|\\r?\\n)high park laps:\\s*\\d+(?=\\r?\\n|$)`, "i").test(String(description || ""));
 }
 
 async function scanActivity(req, activityId) {
@@ -373,11 +415,13 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   }
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
+  const receiptOptions = await receiptOptionsFor(athleteId);
+  if (!Object.values(receiptOptions).some(Boolean)) return { lapCount, changed: false, description: activity.description ?? "" };
   let lapStats = null;
-  if (lapStatsEnabled) {
+  if (lapStatsEnabled && (receiptOptions.lifetimeLaps || receiptOptions.ytdLaps)) {
     try {
       lapStats = await Promise.race([
-        getLapStats(token, athleteId),
+        getLapStats(token, athleteId, { includeYtd: receiptOptions.ytdLaps }),
         new Promise((resolve) => setTimeout(() => resolve(null), 10000))
       ]);
     } catch (error) {
@@ -386,11 +430,12 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   }
   const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
-    lapCount,
-    fastestLap,
-    lifetimeLaps: lapStats?.lifetime,
-    ytdLaps: lapStats?.ytd,
-    ytdYear: lapStats?.year
+    lapCount: receiptOptions.lapCount ? lapCount : null,
+    fastestLap: receiptOptions.fastestLap ? fastestLap : null,
+    lifetimeLaps: receiptOptions.lifetimeLaps ? lapStats?.lifetime : null,
+    ytdLaps: receiptOptions.ytdLaps ? lapStats?.ytd : null,
+    ytdYear: receiptOptions.ytdLaps ? lapStats?.year : null,
+    options: receiptOptions
   });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
@@ -404,6 +449,9 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   // Strava also emits an update event for our own description write. Do not
   // write an identical value back and accidentally create a webhook loop.
   if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
+  // A disconnect can race an already received webhook. Check immediately
+  // before writing so a removed connection cannot modify another activity.
+  if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
   await strava(`/activities/${activityId}`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
@@ -456,13 +504,27 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.get("/api/receipt-options", async (req, res, next) => {
+  try {
+    if (!req.session.strava?.athlete?.id) return res.status(401).json({ error: "Connect Strava first." });
+    res.json(await receiptOptionsFor(req.session.strava.athlete.id));
+  } catch (error) { next(error); }
+});
+app.put("/api/receipt-options", async (req, res, next) => {
+  try {
+    if (!req.session.strava?.athlete?.id) return res.status(401).json({ error: "Connect Strava first." });
+    res.json(await saveReceiptOptions(req.session.strava.athlete.id, req.body));
+  } catch (error) { next(error); }
+});
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
     if (!lapStatsEnabled) return res.json({ available: false, enabled: false });
     if (!req.session.strava) return res.status(401).json({ available: false });
     const token = await accessToken(req);
     const athleteId = req.session.strava.athlete?.id;
-    const stats = await getLapStats(token, athleteId);
+    const options = await receiptOptionsFor(athleteId);
+    if (!options.lifetimeLaps && !options.ytdLaps) return res.json({ available: false, enabled: false });
+    const stats = await getLapStats(token, athleteId, { includeYtd: options.ytdLaps });
     res.json(stats || { available: false });
   } catch (error) {
     if (error.status === 429) return res.status(429).json({ available: false, rateLimited: true });
@@ -477,7 +539,26 @@ app.get("/admin", requireAdmin, (req, res) => {
 app.post("/api/activities/:id/scan", async (req, res, next) => {
   try { res.json(await scanActivity(req, req.params.id)); } catch (error) { next(error); }
 });
-app.post("/auth/disconnect", (req, res) => req.session.destroy(() => res.status(204).end()));
+app.post("/auth/disconnect", async (req, res, next) => {
+  try {
+    const athleteId = req.session.strava?.athlete?.id;
+    const accessTokenValue = req.session.strava?.access_token;
+    // Remove Lapped's persisted token before contacting Strava. This guarantees
+    // webhooks cannot update future activities even if the remote revocation is slow.
+    await removeConnectedAthlete(athleteId);
+    if (accessTokenValue) {
+      await fetch("https://www.strava.com/oauth/deauthorize", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessTokenValue}` }
+      }).catch(() => {});
+    }
+    req.session.destroy((error) => {
+      if (error) return next(error);
+      res.clearCookie("lapped_session");
+      res.status(204).end();
+    });
+  } catch (error) { next(error); }
+});
 // Register this public URL in the Strava developer dashboard as the webhook callback.
 app.get("/webhook", (req, res) => {
   if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.STRAVA_VERIFY_TOKEN) {
