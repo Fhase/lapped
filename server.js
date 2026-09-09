@@ -1,0 +1,144 @@
+import "dotenv/config";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import express from "express";
+import session from "express-session";
+
+const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT_ID"];
+const configError = required.filter((name) => !process.env[name]).join(", ");
+const app = express();
+const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
+const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
+const tokenStore = path.join(dataDir, "tokens.json");
+
+app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || "change-me-before-production",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { sameSite: "lax", secure: process.env.NODE_ENV === "production" }
+}));
+app.use(express.static("public"));
+
+const strava = async (path, options = {}) => {
+  const response = await fetch(`https://www.strava.com/api/v3${path}`, options);
+  if (!response.ok) throw new Error(`Strava returned ${response.status}: ${await response.text()}`);
+  return response.json();
+};
+
+async function readTokens() {
+  try { return JSON.parse(await fs.readFile(tokenStore, "utf8")); } catch { return {}; }
+}
+async function saveToken(token) {
+  if (!token.athlete?.id) return;
+  await fs.mkdir(dataDir, { recursive: true });
+  const tokens = await readTokens();
+  tokens[token.athlete.id] = token;
+  await fs.writeFile(tokenStore, JSON.stringify(tokens, null, 2));
+}
+
+async function accessToken(req) {
+  const token = req.session.strava;
+  if (!token) throw new Error("Connect Strava first.");
+  if (token.expires_at > Math.floor(Date.now() / 1000) + 60) return token.access_token;
+  const refreshed = await fetch("https://www.strava.com/oauth/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: token.refresh_token })
+  });
+  if (!refreshed.ok) throw new Error("Could not refresh the Strava connection.");
+  const refreshedToken = await refreshed.json();
+  refreshedToken.athlete = token.athlete;
+  Object.assign(req.session, { strava: refreshedToken });
+  await saveToken(req.session.strava);
+  return req.session.strava.access_token;
+}
+
+async function tokenForAthlete(athleteId) {
+  const token = (await readTokens())[athleteId];
+  if (!token) throw new Error("No connected athlete found for this event.");
+  if (token.expires_at > Math.floor(Date.now() / 1000) + 60) return token.access_token;
+  const response = await fetch("https://www.strava.com/oauth/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: token.refresh_token })
+  });
+  if (!response.ok) throw new Error("Could not refresh an athlete's Strava connection.");
+  const refreshed = await response.json();
+  refreshed.athlete = token.athlete;
+  await saveToken(refreshed);
+  return refreshed.access_token;
+}
+
+function isTargetEffort(effort) {
+  return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
+}
+
+async function scanActivity(req, activityId) {
+  const token = await accessToken(req);
+  return scanActivityWithToken(token, activityId);
+}
+async function scanActivityWithToken(token, activityId) {
+  const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
+  const lapCount = (activity.segment_efforts || []).filter(isTargetEffort).length;
+  if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
+
+  const stamp = `High Park laps: ${lapCount}`;
+  // Do not overwrite the user's writing. The extension adds/replaces only its own line.
+  const existing = (activity.description || "").replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "").trim();
+  const description = [existing, stamp].filter(Boolean).join("\n");
+  await strava(`/activities/${activityId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ description })
+  });
+  return { lapCount, changed: true, description };
+}
+
+app.get("/auth/strava", (req, res) => {
+  if (configError) return res.status(503).send(`Missing configuration: ${configError}`);
+  const state = crypto.randomBytes(24).toString("hex");
+  req.session.oauthState = state;
+  const url = new URL("https://www.strava.com/oauth/authorize");
+  url.search = new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, redirect_uri: `${baseUrl}/auth/strava/callback`, response_type: "code", approval_prompt: "auto", scope: "activity:read_all,activity:write", state });
+  res.redirect(url);
+});
+
+app.get("/auth/strava/callback", async (req, res, next) => {
+  try {
+    if (!req.query.code || req.query.state !== req.session.oauthState) throw new Error("Invalid OAuth state.");
+    const response = await fetch("https://www.strava.com/oauth/token", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, code: req.query.code, grant_type: "authorization_code" })
+    });
+    if (!response.ok) throw new Error("Strava did not authorize the app.");
+    req.session.strava = await response.json();
+    await saveToken(req.session.strava);
+    delete req.session.oauthState;
+    res.redirect("/?connected=1");
+  } catch (error) { next(error); }
+});
+
+app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), configured: !configError, segmentId: segmentId || null }));
+app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
+app.post("/api/activities/:id/scan", async (req, res, next) => {
+  try { res.json(await scanActivity(req, req.params.id)); } catch (error) { next(error); }
+});
+app.post("/auth/disconnect", (req, res) => req.session.destroy(() => res.status(204).end()));
+// Register this public URL in the Strava developer dashboard as the webhook callback.
+app.get("/webhook", (req, res) => {
+  if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === process.env.STRAVA_VERIFY_TOKEN) {
+    return res.json({ "hub.challenge": req.query["hub.challenge"] });
+  }
+  res.sendStatus(403);
+});
+app.post("/webhook", (req, res) => {
+  res.sendStatus(200); // acknowledge fast; Strava retries slow callbacks.
+  const event = req.body;
+  if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
+  tokenForAthlete(event.owner_id)
+    .then((token) => scanActivityWithToken(token, event.object_id))
+    .catch((error) => console.error("Webhook scan failed:", error.message));
+});
+app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
+app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER ? "0.0.0.0" : "127.0.0.1"), () => console.log(`High Park Laps running at ${baseUrl}`));

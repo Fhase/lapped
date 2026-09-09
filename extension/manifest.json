@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "High Park Lap Counter",
+  "version": "1.0.0",
+  "description": "Adds a completed High Park lap count to your Strava activity.",
+  "action": { "default_popup": "popup.html", "default_title": "Count High Park laps" },
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": ["https://www.strava.com/*", "http://localhost:3000/*"]
+}
