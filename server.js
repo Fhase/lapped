@@ -129,11 +129,11 @@ app.get("/auth/strava", (req, res) => {
   const state = crypto.randomBytes(24).toString("hex");
   req.session.oauthState = state;
   const url = new URL("https://www.strava.com/oauth/authorize");
-  url.search = new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, redirect_uri: `${baseUrl}/auth/strava/callback`, response_type: "code", approval_prompt: "auto", scope: "activity:read_all,activity:write", state });
+  url.search = new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, redirect_uri: `${baseUrl}/auth/strava/complete`, response_type: "code", approval_prompt: "auto", scope: "activity:read_all,activity:write", state });
   res.redirect(url);
 });
 
-app.get("/auth/strava/callback", async (req, res, next) => {
+app.get("/auth/strava/complete", async (req, res, next) => {
   try {
     if (!req.query.code || req.query.state !== req.session.oauthState) throw new Error("Invalid OAuth state.");
     const response = await fetch("https://www.strava.com/oauth/token", {
