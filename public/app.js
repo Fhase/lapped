@@ -1,3 +1,5 @@
+import "./description-format.js";
+
 const status = document.querySelector("#status"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const lapStats = document.querySelector("#lap-stats"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
@@ -7,7 +9,7 @@ function setTheme(theme) {
   themeLabel.textContent = `${theme[0].toUpperCase()}${theme.slice(1)} mode`;
 }
 const savedTheme = localStorage.getItem("lapped-theme");
-setTheme(savedTheme === "light" ? "light" : "dark");
+setTheme(savedTheme === "dark" ? "dark" : "light");
 themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);

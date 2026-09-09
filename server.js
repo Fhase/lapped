@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import express from "express";
 import session from "express-session";
+import { formatReceipt, receiptSiteUrl } from "./public/description-format.js";
 
 const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT_ID"];
 const configError = required.filter((name) => !process.env[name]).join(", ");
@@ -11,14 +12,13 @@ const app = express();
 const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
 const canonicalUrl = new URL(baseUrl);
 const renderHost = process.env.RENDER_EXTERNAL_URL ? new URL(process.env.RENDER_EXTERNAL_URL).host : null;
-const publicSiteHost = "lapped.fit";
+const publicSiteHost = new URL(receiptSiteUrl).hostname;
 // Older activity receipts used the former Render hostname. Build it from parts
 // so those receipts are still replaced without publishing that legacy address.
 const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
-const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -115,64 +115,6 @@ async function saveToken(token) {
   }));
 }
 
-async function readLapStats() {
-  try {
-    const stored = JSON.parse(await fs.readFile(lapStatsStore, "utf8"));
-    if (!stored?.ciphertext) return stored;
-    if (!tokenEncryptionKey) throw new Error("TOKEN_ENCRYPTION_KEY is required to read encrypted lap stats.");
-    const decipher = crypto.createDecipheriv(
-      "aes-256-gcm",
-      tokenEncryptionKey,
-      Buffer.from(stored.iv, "base64")
-    );
-    decipher.setAuthTag(Buffer.from(stored.tag, "base64"));
-    return JSON.parse(Buffer.concat([
-      decipher.update(Buffer.from(stored.ciphertext, "base64")),
-      decipher.final()
-    ]).toString("utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return {};
-    throw error;
-  }
-}
-
-async function saveLapStats(stats) {
-  await fs.mkdir(dataDir, { recursive: true });
-  if (!tokenEncryptionKey) return fs.writeFile(lapStatsStore, JSON.stringify(stats, null, 2));
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", tokenEncryptionKey, iv);
-  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(stats)), cipher.final()]);
-  await fs.writeFile(lapStatsStore, JSON.stringify({
-    v: 1,
-    iv: iv.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64"),
-    ciphertext: ciphertext.toString("base64")
-  }));
-}
-
-async function clearLapStats(athleteId) {
-  if (!athleteId) return;
-  const stats = await readLapStats();
-  if (!stats[athleteId]) return;
-  delete stats[athleteId];
-  await saveLapStats(stats);
-}
-
-async function activityWasProcessed(athleteId, activityId) {
-  if (!athleteId || !activityId) return false;
-  const stats = await readLapStats();
-  return Boolean(stats.__processed?.[athleteId]?.[activityId]);
-}
-
-async function markActivityProcessed(athleteId, activityId) {
-  if (!athleteId || !activityId) return;
-  const stats = await readLapStats();
-  stats.__processed ||= {};
-  stats.__processed[athleteId] ||= {};
-  stats.__processed[athleteId][activityId] = Date.now();
-  await saveLapStats(stats);
-}
-
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -218,9 +160,9 @@ function adminPage(athletes) {
     const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
     return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(athlete.id)}</td><td>connected</td></tr>`;
   }).join("") || `<tr><td colspan="3">No connected athletes yet.</td></tr>`;
-  return `<!doctype html><html lang="en" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
+  return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
     :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label{color:var(--muted);font-size:12px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}@media(max-width:600px){body{padding:20px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:64px}.panel-head{display:block}.panel-head p{margin-top:8px}}
-  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">Dark mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="panel"><div class="panel-head"><h2>People connected to Lapped</h2><p>Only visible to the owner Strava account.</p></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>status</th></tr></thead><tbody>${rows}</tbody></table></section></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme==='light'?'Light mode':'Dark mode'}setTheme(localStorage.getItem('lapped-theme')==='light'?'light':'dark');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};</script></body></html>`;
+  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">Light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="panel"><div class="panel-head"><h2>People connected to Lapped</h2><p>Only visible to the owner Strava account.</p></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>status</th></tr></thead><tbody>${rows}</tbody></table></section></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme==='light'?'Light mode':'Dark mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};</script></body></html>`;
 }
 
 async function requireAdmin(req, res, next) {
@@ -273,53 +215,6 @@ async function tokenForAthlete(athleteId) {
   return refreshed.access_token;
 }
 
-const lapStatsCacheMs = 24 * 60 * 60 * 1000;
-
-function stravaHeaders(token) {
-  return { headers: { Authorization: `Bearer ${token}` } };
-}
-
-async function countSegmentEfforts(token, start, end) {
-  const params = new URLSearchParams({
-    segment_id: segmentId,
-    start_date_local: start.toISOString(),
-    end_date_local: end.toISOString(),
-    per_page: "200"
-  });
-  const efforts = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
-  if (efforts.length < 200 || end - start <= 24 * 60 * 60 * 1000) return efforts.length;
-  const middle = new Date(start.getTime() + Math.floor((end - start) / 2));
-  const [firstHalf, secondHalf] = await Promise.all([
-    countSegmentEfforts(token, start, middle),
-    countSegmentEfforts(token, middle, end)
-  ]);
-  return firstHalf + secondHalf;
-}
-
-async function getLapStats(token, athleteId) {
-  const stats = await readLapStats();
-  const cached = stats[athleteId];
-  if (cached && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
-
-  try {
-    const segment = await strava(`/segments/${segmentId}`, stravaHeaders(token));
-    const lifetime = Number(segment.athlete_segment_stats?.effort_count);
-    if (!Number.isFinite(lifetime)) throw new Error("Strava returned 403: segment history unavailable");
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
-    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now() };
-    stats[athleteId] = result;
-    await saveLapStats(stats);
-    return result;
-  } catch (error) {
-    if (!/Strava returned (?:401|403|404)/.test(error.message)) throw error;
-    stats[athleteId] = { available: false, checkedAt: Date.now() };
-    await saveLapStats(stats);
-    return null;
-  }
-}
-
 function isTargetEffort(effort) {
   return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
 }
@@ -337,49 +232,24 @@ function formatFastestLap(efforts) {
   return `${minutes}:${remainder} · ${speedKmh} km/h`;
 }
 
-function hasLappedReceipt(description) {
-  return /(?:^|\r?\n)(?:(?:laps|loops):\s*\d+(?:\r?\nfastest lap:[^\r\n]+)?(?:\r?\n(?:lifetime laps:\s*\d+|\d{4} laps:\s*\d+))*\r?\n(?:https?:\/\/)?(?:www\.)?(?:lapped\.fit|lapped\.onrender\.com)|high park laps:\s*\d+)(?=\r?\n|$)/i.test(String(description || ""));
-}
-
 async function scanActivity(req, activityId) {
   const token = await accessToken(req);
-  return scanActivityWithToken(token, activityId, req.session.strava.athlete?.id);
+  return scanActivityWithToken(token, activityId);
 }
-async function scanActivityWithToken(token, activityId, athleteId) {
+async function scanActivityWithToken(token, activityId) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
-  if (await activityWasProcessed(athleteId, activityId)) {
-    return { lapCount, changed: false, description: activity.description ?? "" };
-  }
-  if (hasLappedReceipt(activity.description)) {
-    return { lapCount, changed: false, description: activity.description ?? "" };
-  }
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
   const fastestLap = formatFastestLap(targetEfforts);
-  let lapStats = null;
-  try {
-    lapStats = await Promise.race([
-      getLapStats(token, athleteId),
-      new Promise((resolve) => setTimeout(() => resolve(null), 10000))
-    ]);
-  } catch (error) {
-    console.error("Lap stats lookup failed:", error.message);
-  }
-  const stamp = [
-    `laps: ${lapCount}`,
-    fastestLap && `fastest lap: ${fastestLap}`,
-    lapStats && `lifetime laps: ${lapStats.lifetime}`,
-    lapStats && `${lapStats.year} laps: ${lapStats.ytd}`,
-    `www.${publicSiteHost}`
-  ].filter(Boolean).join("\n");
+  const stamp = formatReceipt({ lapCount, fastestLap });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
   const existing = (activity.description || "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
     .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
-    .replace(new RegExp(`(?:^|\n)Laps: \d+(?:\nfastest lap: [^\n]+)?(?:\n(?:https:\/\/)?(?:(?:www\.)?${legacyReceiptHost.replace(/\./g, "\\.")}|(?:www\.)?${publicSiteHost.replace(/\./g, "\\.")}))?(?=\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:${legacyReceiptHost.replace(/\\./g, "\\\\.")}|${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
     .replace(new RegExp(`(?:^|\\n)L O O P S : \\d+(?:\\n${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "g"), "")
     .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
@@ -391,8 +261,6 @@ async function scanActivityWithToken(token, activityId, athleteId) {
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ description })
   });
-  await markActivityProcessed(athleteId, activityId);
-  await clearLapStats(athleteId);
   return { lapCount, changed: true, description };
 }
 
@@ -438,15 +306,6 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), configured: !configError, segmentId: segmentId || null }));
-app.get("/api/lap-stats", async (req, res, next) => {
-  try {
-    if (!req.session.strava) return res.status(401).json({ available: false });
-    const token = await accessToken(req);
-    const athleteId = req.session.strava.athlete?.id;
-    const stats = await getLapStats(token, athleteId);
-    res.json(stats || { available: false });
-  } catch (error) { next(error); }
-});
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, (req, res) => {
   const athletes = Object.values(req.connectedTokens).map((token) => token.athlete || {});
@@ -468,7 +327,7 @@ app.post("/webhook", (req, res) => {
   const event = req.body;
   if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
   tokenForAthlete(event.owner_id)
-    .then((token) => scanActivityWithToken(token, event.object_id, event.owner_id))
+    .then((token) => scanActivityWithToken(token, event.object_id))
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
