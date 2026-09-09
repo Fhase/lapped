@@ -15,6 +15,9 @@ const tokenStore = path.join(dataDir, "tokens.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
+// A short-lived server-side record keeps OAuth safe if a privacy extension strips
+// the session cookie during Strava's cross-site return.
+const pendingOAuthStates = new Map();
 
 app.use(express.json());
 app.use(session({
@@ -128,6 +131,7 @@ app.get("/auth/strava", (req, res) => {
   if (configError) return res.status(503).send(`Missing configuration: ${configError}`);
   const state = crypto.randomBytes(24).toString("hex");
   req.session.oauthState = state;
+  pendingOAuthStates.set(state, Date.now());
   const url = new URL("https://www.strava.com/oauth/authorize");
   url.search = new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, redirect_uri: `${baseUrl}/auth/strava/complete`, response_type: "code", approval_prompt: "auto", scope: "activity:read_all,activity:write", state });
   res.redirect(url);
@@ -135,7 +139,12 @@ app.get("/auth/strava", (req, res) => {
 
 app.get("/auth/strava/complete", async (req, res, next) => {
   try {
-    if (!req.query.code || req.query.state !== req.session.oauthState) throw new Error("Invalid OAuth state.");
+    const state = String(req.query.state || "");
+    const issuedAt = pendingOAuthStates.get(state);
+    const sessionMatches = state && req.session.oauthState === state;
+    const recentServerState = Number.isFinite(issuedAt) && Date.now() - issuedAt < 10 * 60 * 1000;
+    if (!req.query.code || (!sessionMatches && !recentServerState)) throw new Error("Invalid OAuth state.");
+    pendingOAuthStates.delete(state);
     const response = await fetch("https://www.strava.com/oauth/token", {
       method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, code: req.query.code, grant_type: "authorization_code" })
