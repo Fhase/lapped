@@ -1,5 +1,5 @@
 const message = document.querySelector('#message'), button = document.querySelector('#scan'), input = document.querySelector('#app-url');
-chrome.storage.sync.get({ appUrl: 'http://localhost:3000' }, ({ appUrl }) => input.value = appUrl);
+chrome.storage.sync.get({ appUrl: 'https://lapped.onrender.com' }, ({ appUrl }) => input.value = appUrl);
 input.addEventListener('change', () => chrome.storage.sync.set({ appUrl: input.value.replace(/\/$/, '') }));
 button.onclick = async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
