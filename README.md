@@ -5,7 +5,7 @@
 ```text
 laps: 14
 fastest lap: 2:38 · 42.3 km/h
-lapped.fit
+https://lapped.fit
 ```
 
 If an activity has no completed effort for the configured High Park segment, Lapped leaves its description untouched. It preserves any rider-written description and replaces only its own receipt when a ride is rescanned.
