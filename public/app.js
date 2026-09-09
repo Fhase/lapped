@@ -8,7 +8,7 @@ const themeToggle = document.querySelector("#theme-toggle"), themeLabel = docume
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
   themeToggle.checked = theme === "light";
-  themeLabel.textContent = `${theme[0].toUpperCase()}${theme.slice(1)} mode`;
+  themeLabel.textContent = `${theme} mode`;
 }
 const savedTheme = localStorage.getItem("lapped-theme");
 setTheme(savedTheme === "dark" ? "dark" : "light");
