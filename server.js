@@ -158,6 +158,21 @@ async function clearLapStats(athleteId) {
   await saveLapStats(stats);
 }
 
+async function activityWasProcessed(athleteId, activityId) {
+  if (!athleteId || !activityId) return false;
+  const stats = await readLapStats();
+  return Boolean(stats.__processed?.[athleteId]?.[activityId]);
+}
+
+async function markActivityProcessed(athleteId, activityId) {
+  if (!athleteId || !activityId) return;
+  const stats = await readLapStats();
+  stats.__processed ||= {};
+  stats.__processed[athleteId] ||= {};
+  stats.__processed[athleteId][activityId] = Date.now();
+  await saveLapStats(stats);
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -323,7 +338,7 @@ function formatFastestLap(efforts) {
 }
 
 function hasLappedReceipt(description) {
-  return /(?:^|\r?\n)(?:(?:laps|loops):\s*\d+(?:\r?\nfastest lap:[^\r\n]+)?\r?\n(?:https?:\/\/)?(?:www\.)?(?:lapped\.fit|lapped\.onrender\.com)|high park laps:\s*\d+)(?=\r?\n|$)/i.test(String(description || ""));
+  return /(?:^|\r?\n)(?:(?:laps|loops):\s*\d+(?:\r?\nfastest lap:[^\r\n]+)?(?:\r?\n(?:lifetime laps:\s*\d+|\d{4} laps:\s*\d+))*\r?\n(?:https?:\/\/)?(?:www\.)?(?:lapped\.fit|lapped\.onrender\.com)|high park laps:\s*\d+)(?=\r?\n|$)/i.test(String(description || ""));
 }
 
 async function scanActivity(req, activityId) {
@@ -334,6 +349,9 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
+  if (await activityWasProcessed(athleteId, activityId)) {
+    return { lapCount, changed: false, description: activity.description ?? "" };
+  }
   if (hasLappedReceipt(activity.description)) {
     return { lapCount, changed: false, description: activity.description ?? "" };
   }
@@ -373,6 +391,7 @@ async function scanActivityWithToken(token, activityId, athleteId) {
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ description })
   });
+  await markActivityProcessed(athleteId, activityId);
   await clearLapStats(athleteId);
   return { lapCount, changed: true, description };
 }
