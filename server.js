@@ -74,6 +74,37 @@ async function saveToken(token) {
   }));
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+  })[character]);
+}
+
+function adminPage(athletes) {
+  const rows = athletes.map((athlete) => {
+    const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
+    return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(athlete.id)}</td><td>connected</td></tr>`;
+  }).join("") || `<tr><td colspan="3">No connected athletes yet.</td></tr>`;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
+    :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#191a18;color:#f2eee7;font-family:Arial,Helvetica,sans-serif;padding:32px;min-height:100vh}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:#f2eee7;text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.tag{color:#aaa69e;font-size:12px}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 42px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:#aaa69e;margin:22px 0 0}.panel{border-top:1px solid #f2eee7;padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:#aaa69e;font-size:12px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid #3c3c38}th{color:#aaa69e;font-size:11px;font-weight:400}td:last-child{text-align:right;color:#fc4c02}@media(max-width:600px){body{padding:20px}.top{margin-bottom:64px}.count{font-size:96px}.panel-head{display:block}.panel-head p{margin-top:8px}}
+  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><span class="tag">private admin</span></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="panel"><div class="panel-head"><h2>People connected to Lapped</h2><p>Only visible to the owner Strava account.</p></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>status</th></tr></thead><tbody>${rows}</tbody></table></section></main></body></html>`;
+}
+
+async function requireAdmin(req, res, next) {
+  try {
+    if (!req.session.strava) {
+      req.session.returnTo = "/admin";
+      return res.redirect("/auth/strava");
+    }
+    const ownerId = String(process.env.ADMIN_ATHLETE_ID || "");
+    if (!ownerId) return res.status(503).send("Admin access has not been configured.");
+    const tokens = await readTokens();
+    if (String(req.session.strava.athlete?.id) !== ownerId) return res.status(403).send("Admin access is not available for this Strava account.");
+    req.connectedTokens = tokens;
+    next();
+  } catch (error) { next(error); }
+}
+
 async function accessToken(req) {
   const token = req.session.strava;
   if (!token) throw new Error("Connect Strava first.");
@@ -184,12 +215,18 @@ app.get("/auth/strava/complete", async (req, res, next) => {
     req.session.strava = await response.json();
     await saveToken(req.session.strava);
     delete req.session.oauthState;
-    res.redirect("/?connected=1");
+    const returnTo = req.session.returnTo || "/?connected=1";
+    delete req.session.returnTo;
+    res.redirect(returnTo);
   } catch (error) { next(error); }
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), configured: !configError, segmentId: segmentId || null }));
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
+app.get("/admin", requireAdmin, (req, res) => {
+  const athletes = Object.values(req.connectedTokens).map((token) => token.athlete || {});
+  res.type("html").send(adminPage(athletes));
+});
 app.post("/api/activities/:id/scan", async (req, res, next) => {
   try { res.json(await scanActivity(req, req.params.id)); } catch (error) { next(error); }
 });
