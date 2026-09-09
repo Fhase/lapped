@@ -1,6 +1,6 @@
 import "./description-format.js";
 
-const status = document.querySelector("#status"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
+const status = document.querySelector("#status"), statusRow = document.querySelector("#status-row"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
@@ -34,6 +34,6 @@ fetch("/api/status").then(r => r.json()).then(data => {
       ytdLapsLabel.textContent = `${stats.year} laps`;
     }).catch(() => {});
   }
-  else status.hidden = true;
+  else statusRow.hidden = true;
 }).catch(() => status.textContent = "Server unavailable");
 disconnect.onclick = async () => { await fetch("/auth/disconnect", { method: "POST" }); location.reload(); };
