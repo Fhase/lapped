@@ -118,9 +118,13 @@ async function scanActivityWithToken(token, activityId) {
   const lapCount = (activity.segment_efforts || []).filter(isTargetEffort).length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = `High Park laps: ${lapCount}`;
-  // Do not overwrite the user's writing. The extension adds/replaces only its own line.
-  const existing = (activity.description || "").replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "").trim();
+  const stamp = `Loops: ${lapCount}\nhttps://lapped.onrender.com`;
+  // Do not overwrite the user's writing. The app replaces only its own stamp,
+  // including the older High Park laps format already written to past rides.
+  const existing = (activity.description || "")
+    .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
+    .replace(/(?:^|\n)Loops: \d+(?:\nhttps:\/\/lapped\.onrender\.com)?(?=\n|$)/g, "")
+    .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
   // Strava also emits an update event for our own description write. Do not
   // write an identical value back and accidentally create a webhook loop.
