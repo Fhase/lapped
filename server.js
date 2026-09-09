@@ -346,7 +346,7 @@ function connectedAthletePage(tokens, page, query) {
   };
 }
 
-const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}</style><script>
+const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}.chart{align-items:stretch;padding:12px 0 0;margin-bottom:24px;overflow:visible}.bar{position:relative;display:block;height:100%}.bar i{position:absolute;left:0;right:0;bottom:0}.bar span{position:absolute;left:0;right:0;top:calc(100% + 5px)}</style><script>
 document.querySelector('.search')?.remove();
 </script>`;
 
