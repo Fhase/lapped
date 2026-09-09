@@ -22,6 +22,8 @@ services:
         generateValue: true
       - key: STRAVA_VERIFY_TOKEN
         generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
       - key: STRAVA_CLIENT_ID
         sync: false
       - key: STRAVA_CLIENT_SECRET
