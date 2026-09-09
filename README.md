@@ -1,23 +1,59 @@
 # Lapped
 
-A Strava companion and Chrome extension that writes `High Park laps: N` into a rider's activity description only when Strava reports one or more completed efforts for the configured High Park segment. If no effort is found, the activity description is not touched.
+[Lapped](https://lapped.onrender.com) is a small Strava companion for the High Park loop in Toronto. Connect Strava, finish the configured loop, and Lapped adds a simple receipt to the activity description:
+
+```text
+laps: 14
+fastest lap: 2:38 · 42.3 km/h
+lapped.onrender.com
+```
+
+If an activity has no completed effort for the configured High Park segment, Lapped leaves its description untouched. It preserves any rider-written description and replaces only its own receipt when a ride is rescanned.
+
+## How it works
+
+1. A rider authorizes Lapped with Strava.
+2. Strava sends Lapped an activity webhook after upload or update.
+3. Lapped reads that rider's activity, counts efforts on the configured segment, and writes the receipt only when there is at least one match.
+
+The included Chrome extension is optional. It lets a rider manually rescan an existing Strava activity.
+
+## Privacy and security
+
+- Lapped requests Strava's `activity:read_all` and `activity:write` scopes. Those permissions are needed to inspect segment efforts and write the receipt to the rider's own activity description.
+- Connected-athlete tokens are stored on the service's persistent disk encrypted with AES-256-GCM. The encryption key and all Strava credentials live only in environment variables, never in this repository.
+- `data/`, `.env`, deployment keys, and dependency folders are excluded from Git.
+- The owner dashboard is protected by Strava authentication, an owner-only athlete check, and a signed, HttpOnly, secure cookie. It is not a hidden public page.
+- Riders can revoke access at any time from their Strava account settings.
+
+No web service can honestly promise to be unhackable. Keep the deployment platform and GitHub account protected with strong, unique passwords and two-factor authentication; rotate credentials promptly if there is any concern they were exposed.
 
 ## Run locally
 
-1. Create a Strava API application and set its authorization callback domain to `localhost` for local development.
-2. Copy `.env.example` to `.env`, then add the client ID, secret, a long session secret, and the numeric segment ID from the chosen **High Park Lap** Strava segment URL. The exact segment needs to be selected deliberately because multiple similarly named High Park segments can exist.
-3. Install and run: `npm install && npm run dev`.
-4. Visit `http://localhost:3000`, connect Strava, then load the unpacked `extension/` directory in Chrome at `chrome://extensions` (Developer mode → Load unpacked).
-5. Open one of your Strava activity pages and press the extension's **Count completed laps** button.
+1. Create a Strava API application. For local development, set its authorization callback domain to `localhost`.
+2. Copy `.env.example` to `.env` and supply the values below.
+3. Run `npm install && npm run dev`.
+4. Visit `http://localhost:3000`, connect Strava, then optionally load `extension/` through Chrome's `chrome://extensions` page (Developer mode → **Load unpacked**).
 
-## Automatic post-upload counting
+Required environment variables:
 
-For hands-off operation, deploy the app on a public HTTPS URL, set `APP_URL` to that URL, supply `STRAVA_VERIFY_TOKEN`, and register `https://your-domain/webhook` as your Strava webhook callback. Strava will call it after an activity is created or updated; the server acknowledges immediately and then scans the activity for the configured segment. This allows the lap line to appear without opening the extension. The extension remains useful for manually re-scanning an already-uploaded ride.
+```text
+STRAVA_CLIENT_ID=
+STRAVA_CLIENT_SECRET=
+HIGH_PARK_SEGMENT_ID=16091644
+SESSION_SECRET=
+TOKEN_ENCRYPTION_KEY=
+STRAVA_VERIFY_TOKEN=
+```
 
-### Render deployment
+`ADMIN_ATHLETE_ID` is also recommended for every independent deployment; it must be the Strava athlete ID allowed to view `/admin`.
 
-`render.yaml` defines a small paid Render web service with a 1 GB persistent disk, which preserves the token store for webhook processing. Render supplies a public `onrender.com` URL automatically and the app uses it for OAuth when `APP_URL` is not set. During the Blueprint setup, enter the Strava client ID and secret as protected environment values. Once deployed, set the Strava app's authorization callback domain to the Render hostname and create its webhook subscription using `https://<your-render-host>/webhook`.
+## Deploy on Render
 
-## Important production note
+`render.yaml` creates the web service and a 1 GB persistent disk for encrypted token data. In Render, enter the Strava client ID, client secret, and the owner athlete ID as protected environment variables. Set `APP_URL` to the public URL when using a custom domain. Then set that hostname as the Strava application's authorization callback domain and register `https://<your-host>/webhook` as the Strava webhook callback.
 
-This starter writes connected-athlete tokens to `data/tokens.json` so webhooks can work. Treat that file as sensitive: it is ignored by Git but is not encrypted. For a public service, use HTTPS, encryption at rest, a real session store, and secure secret management. The needed permissions are `activity:read_all` and `activity:write`; the API lets an app fetch an owned activity with all segment efforts and update its description.
+The live Lapped deployment is at [lapped.onrender.com](https://lapped.onrender.com).
+
+## Security reports
+
+Please do not post security-sensitive details in a public issue. Use GitHub's private vulnerability reporting for this repository when it is available, or contact the repository owner privately through GitHub.
