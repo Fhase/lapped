@@ -16,11 +16,10 @@ nav{display:flex;align-items:center;justify-content:space-between;font-size:13px
 .toggle-track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s,background .2s}
 .theme-toggle input:checked+.toggle-track i{transform:translateX(12px);background:var(--ink)}
 .intro{display:grid;grid-template-columns:1.12fr .88fr;gap:45px;align-items:start;padding:102px 0 78px}
-.kicker,.route-meta,figcaption,.status,small,.notes>p:first-child{font-size:12px;letter-spacing:.01em;color:var(--muted);margin:0}
+.kicker,.route-meta,figcaption,small,.notes>p:first-child{font-size:12px;letter-spacing:.01em;color:var(--muted);margin:0}
 .kicker{margin-bottom:20px}
 h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(60px,8.7vw,110px);letter-spacing:-.075em;line-height:.9;font-weight:400;margin:0 0 38px;max-width:720px}
 h1 span{display:block}
-h1 span+span{margin-top:18px}
 .title-sans,.title-serif{font-family:Georgia,"Times New Roman",serif;font-size:1em;font-weight:400;letter-spacing:-.075em;line-height:.9;white-space:normal}
 .lede{max-width:475px;font-size:18px;line-height:1.36;letter-spacing:-.025em;margin:0 0 32px}
 .text-link{font-size:14px;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--ink);padding-bottom:5px}
@@ -39,8 +38,6 @@ h1 span+span{margin-top:18px}
 .end{fill:var(--red)}
 figcaption{color:var(--route-meta);position:relative;z-index:1}
 .connect-card{border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:27px 0 29px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:36px;align-items:end}
-.status{display:flex;gap:8px;align-items:center;margin-bottom:28px;color:var(--ink)}
-.status i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red)}
 h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .connect-card p:not(.status){max-width:490px;line-height:1.4;margin:0;color:var(--muted);letter-spacing:-.015em}
 .actions{display:flex;align-items:flex-end;flex-direction:column;gap:13px}
@@ -52,14 +49,14 @@ h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .button-label{white-space:nowrap}
 .button .button-label+.strava-mark{margin-left:auto}
 .connected-overview{display:flex;align-items:center;gap:26px}.connected-overview[hidden]{display:none}.connected-overview h2{margin:0;font-family:Manrope,Arial,Helvetica,sans-serif;font-size:26px;font-weight:600;letter-spacing:-.045em}.lap-stats-values{display:flex;gap:38px;align-items:end;margin-left:4px;padding-left:26px;border-left:1px solid color-mix(in srgb,var(--ink) 55%,transparent)}.lap-stats-values p{display:flex;flex-direction:column;gap:7px;margin:0}.lap-stats-values strong{color:var(--ink);font-family:Georgia,"Times New Roman",serif;font-size:38px;font-weight:400;letter-spacing:-.07em;line-height:.9}.lap-stats-values span{color:var(--muted);font-size:12px}
-.notes{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(250px,.75fr);gap:56px;padding:28px 0 0}
+.notes{padding:28px 0 0}
 .example-block{display:flex;flex-direction:column;gap:14px;max-width:540px}
 .notes p{margin:0;line-height:1.35;font-size:14px;letter-spacing:-.01em}
 .notes .example-label{font-size:18px;line-height:1.2;letter-spacing:-.03em;color:var(--ink);align-self:start}
 .description-example{align-self:start;width:fit-content;max-width:100%;padding:18px 20px;font-size:16px;line-height:1.62;letter-spacing:-.01em;background:color-mix(in srgb,var(--paper) 90%,var(--ink));}
 .description-example span,.description-example a{display:inline;font:inherit;color:inherit}
 .description-example a{ text-underline-offset:3px }
-.notes>p:last-child{color:var(--muted);max-width:290px;align-self:start}
+.example-note{color:var(--muted);max-width:290px}
 .copy{animation:float-in .8s cubic-bezier(.22,1,.36,1) both}
 .connect-card,.notes{animation:fade-up .7s ease both .42s}
 .route-card:hover{transform:translateY(-4px)}
@@ -72,7 +69,6 @@ h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .intro{grid-template-columns:1fr;padding:72px 0 53px;gap:46px}
 .route-card{height:310px}
 h1{font-size:clamp(60px,17vw,92px);line-height:.9}
-h1 span+span{margin-top:15px}
 .connect-card{grid-template-columns:1fr;gap:25px}.actions{align-items:flex-start}.connected-overview{align-items:flex-start;flex-wrap:wrap;gap:14px}.connected-overview h2{font-size:24px;width:100%}.lap-stats-values{gap:34px;margin-left:0;padding-left:0;border-left:0}.lap-stats-values strong{font-size:38px}
 .notes{grid-template-columns:1fr;gap:15px;padding-top:24px}
 .description-example{min-height:0;padding:16px 18px}

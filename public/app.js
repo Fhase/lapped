@@ -1,6 +1,6 @@
 import "./description-format.js";
 
-const status = document.querySelector("#status"), statusRow = document.querySelector("#status-row"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
+const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
@@ -17,7 +17,7 @@ themeToggle.onchange = () => {
   localStorage.setItem("lapped-theme", theme);
 };
 fetch("/api/status").then(r => r.json()).then(data => {
-  if (!data.configured) { status.textContent = "Setup needed"; connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
+  if (!data.configured) { connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
   if (data.connected) {
     const name = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(" ");
     athleteName.textContent = name || "Your laps";
@@ -34,6 +34,5 @@ fetch("/api/status").then(r => r.json()).then(data => {
       ytdLapsLabel.textContent = `${stats.year} laps`;
     }).catch(() => {});
   }
-  else statusRow.hidden = true;
-}).catch(() => status.textContent = "Server unavailable");
+}).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => { await fetch("/auth/disconnect", { method: "POST" }); location.reload(); };
