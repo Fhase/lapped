@@ -68,3 +68,4 @@ h1 span+span{margin-top:15px}
 .notes{grid-template-columns:1fr;gap:15px;padding-top:24px}
 .lede{font-size:17px}
 }
+.button[hidden]{display:none}
