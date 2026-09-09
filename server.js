@@ -245,14 +245,14 @@ async function scanActivityWithToken(token, activityId) {
   const stamp = [
     `laps: ${lapCount}`,
     fastestLap && `fastest lap: ${fastestLap}`,
-    `https://${publicSiteHost}`
+    `www.${publicSiteHost}`
   ].filter(Boolean).join("\n");
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
   const existing = (activity.description || "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
     .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
-    .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:${legacyReceiptHost.replace(/\\./g, "\\\\.")}|${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\n)Laps: \d+(?:\nfastest lap: [^\n]+)?(?:\n(?:https:\/\/)?(?:(?:www\.)?${legacyReceiptHost.replace(/\./g, "\\.")}|(?:www\.)?${publicSiteHost.replace(/\./g, "\\.")}))?(?=\n|$)`, "gi"), "")
     .replace(new RegExp(`(?:^|\\n)L O O P S : \\d+(?:\\n${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "g"), "")
     .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
