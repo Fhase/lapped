@@ -340,9 +340,15 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
   const fastestLap = formatFastestLap(targetEfforts);
+  let lapStats = null;
+  try { lapStats = await getLapStats(token, athleteId); } catch (error) {
+    console.error("Lap stats lookup failed:", error.message);
+  }
   const stamp = [
     `laps: ${lapCount}`,
     fastestLap && `fastest lap: ${fastestLap}`,
+    lapStats && `lifetime laps: ${lapStats.lifetime}`,
+    lapStats && `${lapStats.year} laps: ${lapStats.ytd}`,
     `www.${publicSiteHost}`
   ].filter(Boolean).join("\n");
   // Do not overwrite the user's writing. The app replaces only its own stamp,
