@@ -48,28 +48,24 @@
       </figure>
     </section>
     <section class="connect-card" id="connect-card">
-      <div>
+      <div id="onboarding">
         <p class="status"><i></i><b id="status">Checking setup…</b></p>
         <h2>Ride. Save. Done.</h2>
-        <p>Once connected, completed loops get a simple count in your activity description. Your own notes stay yours.</p>
+        <p>Completed High Park laps get a count in your activity description. Your own notes stay yours.</p>
+      </div>
+      <div class="connected-overview" id="connected-overview" hidden aria-live="polite">
+        <h2 id="athlete-name"></h2>
+        <div class="lap-stats-values">
+          <p><strong id="lifetime-laps">—</strong><span>lifetime laps</span></p>
+          <p><strong id="ytd-laps">—</strong><span id="ytd-laps-label">ytd laps</span></p>
+        </div>
       </div>
       <div class="actions">
         <a class="button" id="connect" href="/auth/strava">Connect Strava <img class="strava-mark" src="/strava-mark.png" alt="" aria-hidden="true" /><span>→</span></a>
         <button class="button" id="disconnect" hidden><span class="button-label">Disconnect Strava</span><img class="strava-mark" src="/strava-mark.png" alt="" aria-hidden="true" /></button>
-        <small>Only completed High Park laps count.</small>
       </div>
     </section>
-    <section class="lap-stats" id="lap-stats" hidden aria-live="polite">
-      <div class="lap-stats-heading">
-        <p>your laps</p>
-        <strong id="athlete-name"></strong>
-      </div>
-      <div class="lap-stats-values">
-        <p><strong id="lifetime-laps">—</strong><span>lifetime laps</span></p>
-        <p><strong id="ytd-laps">—</strong><span id="ytd-laps-label">ytd laps</span></p>
-      </div>
-    </section>
-    <section class="notes">
+    <section class="notes" id="description-example">
       <div class="example-block">
         <p class="example-label">Example description</p>
         <div class="description-example" data-description-example aria-label="Example Strava activity description"></div>
