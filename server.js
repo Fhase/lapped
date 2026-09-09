@@ -18,6 +18,9 @@ const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
 // A short-lived server-side record keeps OAuth safe if a privacy extension strips
 // the session cookie during Strava's cross-site return.
 const pendingOAuthStates = new Map();
+// Hash of the original Lapped owner's Strava athlete ID. Render can override
+// this with ADMIN_ATHLETE_ID without placing a personal ID in source control.
+const defaultAdminAthleteHash = "cbed8490189459b6fb84700492174b34db9035e0cc8461fc5bf43a4fc1ecf4af";
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -96,10 +99,12 @@ async function requireAdmin(req, res, next) {
       req.session.returnTo = "/admin";
       return res.redirect("/auth/strava");
     }
-    const ownerId = String(process.env.ADMIN_ATHLETE_ID || "");
-    if (!ownerId) return res.status(503).send("Admin access has not been configured.");
+    const sessionAthleteId = String(req.session.strava.athlete?.id || "");
+    const configuredOwnerId = String(process.env.ADMIN_ATHLETE_ID || "");
+    const isDefaultOwner = crypto.createHash("sha256").update(sessionAthleteId).digest("hex") === defaultAdminAthleteHash;
+    const isConfiguredOwner = configuredOwnerId && sessionAthleteId === configuredOwnerId;
+    if (!isDefaultOwner && !isConfiguredOwner) return res.status(403).send("Admin access is not available for this Strava account.");
     const tokens = await readTokens();
-    if (String(req.session.strava.athlete?.id) !== ownerId) return res.status(403).send("Admin access is not available for this Strava account.");
     req.connectedTokens = tokens;
     next();
   } catch (error) { next(error); }
