@@ -37,6 +37,8 @@ const adminCookieName = "lapped_admin";
 const adminCookieLifetimeMs = 30 * 24 * 60 * 60 * 1000;
 const oauthWindowMs = 10 * 60 * 1000;
 const oauthRequestsByIp = new Map();
+const featureRequestWindowMs = 60 * 60 * 1000;
+const featureRequestSubmissions = new Map();
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -203,6 +205,22 @@ async function saveFeatureRequest(text) {
   return request;
 }
 
+function featureRequestKey(req) {
+  // A memory-only keyed hash limits spam without retaining a raw IP address.
+  return crypto.createHmac("sha256", sessionSecret).update(String(req.ip || "unknown")).digest("hex");
+}
+
+function canSubmitFeatureRequest(req) {
+  const now = Date.now();
+  for (const [key, submittedAt] of featureRequestSubmissions) {
+    if (now - submittedAt >= featureRequestWindowMs) featureRequestSubmissions.delete(key);
+  }
+  const key = featureRequestKey(req);
+  if (featureRequestSubmissions.has(key)) return false;
+  featureRequestSubmissions.set(key, now);
+  return true;
+}
+
 async function removeConnectedAthlete(athleteId) {
   if (!athleteId) return;
   const tokens = await readTokens();
@@ -329,11 +347,7 @@ function connectedAthletePage(tokens, page, query) {
 }
 
 const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}</style><script>
-let searchForm=document.querySelector('.search');if(searchForm)searchForm.submit=()=>{};const cleanForm=searchForm?.cloneNode(true);if(cleanForm){searchForm.replaceWith(cleanForm);searchForm=cleanForm}let searchInput=searchForm?.querySelector('input');searchForm?.addEventListener('submit',event=>event.preventDefault());const tableBody=document.querySelector('tbody'),pages=document.querySelector('.pages');let searchTimer;
-function renderAthletes(data){tableBody.replaceChildren();if(!data.items.length){const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No connected athletes found.';row.append(cell);tableBody.append(row)}else{data.items.forEach(item=>{const row=document.createElement('tr');[item.name,item.id,item.joined,item.status].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});tableBody.append(row)})}pages.replaceChildren();for(let number=1;number<=data.pageCount;number+=1){const link=document.createElement('a');link.href='#';link.textContent=number;if(number===data.page)link.setAttribute('aria-current','page');link.onclick=(event)=>{event.preventDefault();loadAthletes(number)};pages.append(link)}}
-async function loadAthletes(page=1){const params=new URLSearchParams({page:String(page),q:searchInput.value});const response=await fetch('/admin/athletes?'+params);if(!response.ok)return;const data=await response.json();renderAthletes(data)}
-searchInput?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadAthletes(1),220)});
-pages?.querySelectorAll('a').forEach(link=>link.onclick=(event)=>{event.preventDefault();loadAthletes(Number(link.textContent))});
+document.querySelector('.search')?.remove();
 </script>`;
 
 function ticketPanel(stored) {
@@ -612,6 +626,7 @@ app.post("/api/feature-requests", async (req, res, next) => {
   try {
     const text = String(req.body?.request || "").trim().replace(/\s+/g, " ");
     if (text.length < 3 || text.length > 500) return res.status(400).json({ error: "Please keep requests between 3 and 500 characters." });
+    if (!canSubmitFeatureRequest(req)) return res.status(429).json({ error: "One request per hour, please." });
     await saveFeatureRequest(text);
     res.status(201).json({ ok: true });
   } catch (error) { next(error); }
