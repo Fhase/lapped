@@ -12,6 +12,9 @@ const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http:
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
+const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
+  ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
+  : null;
 
 app.use(express.json());
 app.use(session({
@@ -29,14 +32,40 @@ const strava = async (path, options = {}) => {
 };
 
 async function readTokens() {
-  try { return JSON.parse(await fs.readFile(tokenStore, "utf8")); } catch { return {}; }
+  try {
+    const stored = JSON.parse(await fs.readFile(tokenStore, "utf8"));
+    if (!stored?.ciphertext) return stored; // Supports a one-time migration from local development data.
+    if (!tokenEncryptionKey) throw new Error("TOKEN_ENCRYPTION_KEY is required to read encrypted tokens.");
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      tokenEncryptionKey,
+      Buffer.from(stored.iv, "base64")
+    );
+    decipher.setAuthTag(Buffer.from(stored.tag, "base64"));
+    return JSON.parse(Buffer.concat([
+      decipher.update(Buffer.from(stored.ciphertext, "base64")),
+      decipher.final()
+    ]).toString("utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return {};
+    throw error;
+  }
 }
 async function saveToken(token) {
   if (!token.athlete?.id) return;
   await fs.mkdir(dataDir, { recursive: true });
   const tokens = await readTokens();
   tokens[token.athlete.id] = token;
-  await fs.writeFile(tokenStore, JSON.stringify(tokens, null, 2));
+  if (!tokenEncryptionKey) return fs.writeFile(tokenStore, JSON.stringify(tokens, null, 2));
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", tokenEncryptionKey, iv);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(tokens)), cipher.final()]);
+  await fs.writeFile(tokenStore, JSON.stringify({
+    v: 1,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64")
+  }));
 }
 
 async function accessToken(req) {
