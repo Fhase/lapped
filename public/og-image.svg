@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#191A18"/>
+  <rect x="718" y="74" width="390" height="482" fill="#30372D"/>
+  <path d="M818 190C868 133 969 117 1038 172M812 469C864 534 987 549 1047 482" stroke="#596052" stroke-width="2" stroke-linecap="round"/>
+  <path d="M982 129C963 129 955 157 940 182C923 211 904 231 878 245C851 260 830 280 829 306C828 327 842 339 846 356C851 376 854 396 856 411C859 429 855 443 857 459C859 482 879 528 889 549C899 569 917 578 938 584C947 587 956 590 965 589C982 591 1004 584 1013 568C1024 552 1035 541 1033 526C1029 507 1012 494 1008 471C1004 451 1005 427 1011 411C1018 390 1000 373 998 355C996 334 1007 302 1011 278C1017 253 1016 223 1015 180C1015 157 1008 130 982 129Z" stroke="#F2EEE7" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="999" cy="142" r="10" fill="#FC4C02"/>
+  <circle cx="859" cy="355" r="10" fill="#FC4C02"/>
+  <circle cx="863" cy="383" r="9" fill="#FC4C02"/>
+  <circle cx="867" cy="410" r="8" fill="#FC4C02"/>
+  <text x="92" y="113" fill="#F2EEE7" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" letter-spacing="-2">Lapped</text>
+  <text x="92" y="290" fill="#F2EEE7" font-family="Georgia, serif" font-size="105" letter-spacing="-8">Count your</text>
+  <text x="92" y="395" fill="#F2EEE7" font-family="Georgia, serif" font-size="105" letter-spacing="-8">laps.</text>
+  <text x="92" y="483" fill="#AAA69E" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="-1">High Park, Toronto</text>
+  <text x="92" y="526" fill="#FC4C02" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">lapped.onrender.com</text>
+</svg>
