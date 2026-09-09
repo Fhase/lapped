@@ -231,6 +231,10 @@ function formatFastestLap(efforts) {
   return `${minutes}:${remainder} · ${speedKmh} km/h`;
 }
 
+function hasLappedReceipt(description) {
+  return /(?:^|\r?\n)(?:(?:laps|loops):\s*\d+(?:\r?\nfastest lap:[^\r\n]+)?\r?\n(?:https?:\/\/)?(?:www\.)?(?:lapped\.fit|lapped\.onrender\.com)|high park laps:\s*\d+)(?=\r?\n|$)/i.test(String(description || ""));
+}
+
 async function scanActivity(req, activityId) {
   const token = await accessToken(req);
   return scanActivityWithToken(token, activityId);
@@ -239,6 +243,9 @@ async function scanActivityWithToken(token, activityId) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
+  if (hasLappedReceipt(activity.description)) {
+    return { lapCount, changed: false, description: activity.description ?? "" };
+  }
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
   const fastestLap = formatFastestLap(targetEfforts);
