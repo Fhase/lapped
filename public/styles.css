@@ -38,6 +38,7 @@ h1 span{display:block}
 .end{fill:var(--red)}
 figcaption{color:var(--route-meta);position:relative;z-index:1}
 .connect-card{border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:27px 0 29px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:36px;align-items:end}
+.connect-card:has(.connected-overview:not([hidden])){align-items:center}
 h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .connect-card p:not(.status){max-width:490px;line-height:1.4;margin:0;color:var(--muted);letter-spacing:-.015em}
 .actions{display:flex;align-items:flex-end;flex-direction:column;gap:13px}
