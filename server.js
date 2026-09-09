@@ -17,6 +17,9 @@ const publicSiteHost = receiptSiteUrl.replace(/^www\./, "");
 // so those receipts are still replaced without publishing that legacy address.
 const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
+// Historical lap totals are intentionally paused to conserve Strava API usage.
+// Keep the implementation ready for a future re-enable once rate limits grow.
+const lapStatsEnabled = false;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
@@ -370,16 +373,18 @@ async function scanActivityWithToken(token, activityId, athleteId) {
   }
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const fastestLap = formatFastestLap(targetEfforts);
   let lapStats = null;
-  try {
-    lapStats = await Promise.race([
-      getLapStats(token, athleteId),
-      new Promise((resolve) => setTimeout(() => resolve(null), 10000))
-    ]);
-  } catch (error) {
-    console.error("Lap stats lookup failed:", error.message);
+  if (lapStatsEnabled) {
+    try {
+      lapStats = await Promise.race([
+        getLapStats(token, athleteId),
+        new Promise((resolve) => setTimeout(() => resolve(null), 10000))
+      ]);
+    } catch (error) {
+      console.error("Lap stats lookup failed:", error.message);
+    }
   }
+  const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
     lapCount,
     fastestLap,
@@ -450,9 +455,10 @@ app.get("/auth/strava/complete", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null }));
+app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
+    if (!lapStatsEnabled) return res.json({ available: false, enabled: false });
     if (!req.session.strava) return res.status(401).json({ available: false });
     const token = await accessToken(req);
     const athleteId = req.session.strava.athlete?.id;

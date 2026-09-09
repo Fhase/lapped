@@ -1,7 +1,7 @@
 import "./description-format.js";
 
 const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
-const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
+const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name"), lapStatsValues = document.querySelector("#lap-stats-values"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
 function setTheme(theme) {
@@ -27,12 +27,14 @@ fetch("/api/status").then(r => r.json()).then(data => {
     lapLink.innerHTML = "see laps <span>↓</span>";
     connect.hidden = true;
     disconnect.hidden = false;
+    if (!data.lapStatsEnabled) return;
     fetch("/api/lap-stats").then(async r => r.json().catch(() => null)).then(stats => {
       if (!stats?.available) {
         if (stats?.rateLimited) ytdLapsLabel.textContent = "Strava is refreshing";
         return;
       }
       lifetimeLaps.textContent = stats.lifetime;
+      lapStatsValues.hidden = false;
       if (Number.isFinite(stats.ytd)) {
         ytdLaps.textContent = stats.ytd;
         ytdLapsLabel.textContent = `${stats.year} laps`;

@@ -18,7 +18,7 @@ export function formatReceipt({ lapCount, fastestLap, lifetimeLaps, ytdLaps, ytd
 if (typeof document !== "undefined") {
   const example = document.querySelector("[data-description-example]");
   if (example) {
-    const lines = formatReceiptLines({ lapCount: 14, fastestLap: "2:38 · 42.3 km/h", lifetimeLaps: 244, ytdLaps: 86, ytdYear: 2026 });
+    const lines = formatReceiptLines({ lapCount: 14, fastestLap: "2:38 · 42.3 km/h" });
     example.replaceChildren(...lines.flatMap((line, index) => {
       const content = index === lines.length - 1
         ? Object.assign(document.createElement("a"), { href: receiptSiteHref, textContent: line })
