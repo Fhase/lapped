@@ -97,7 +97,15 @@ async function recordAnalyticsEvent(visitorId, event) {
   const now = new Date().toISOString();
   const visitor = analytics[visitorId] || { firstSeen: now, visits: 0, connectStarted: false, connected: false };
   visitor.lastSeen = now;
-  if (event === "visit") visitor.visits += 1;
+  if (event === "visit") {
+    visitor.visits += 1;
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const hour = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "2-digit", hourCycle: "h23" }).format(new Date());
+    visitor.days ||= {};
+    visitor.days[day] ||= { visits: 0, hours: {} };
+    visitor.days[day].visits += 1;
+    visitor.days[day].hours[hour] = (visitor.days[day].hours[hour] || 0) + 1;
+  }
   if (event === "connect") visitor.connectStarted = true;
   if (event === "connected") visitor.connected = true;
   analytics[visitorId] = visitor;
@@ -108,8 +116,20 @@ async function recordAnalyticsEvent(visitorId, event) {
   await writeEncryptedStore(analyticsStore, analytics);
 }
 
+async function excludeAdminFromAnalytics(req, res) {
+  const visitorId = cookieValue(req, "lapped_visitor");
+  if (visitorId) {
+    const analytics = await readEncryptedStore(analyticsStore);
+    if (analytics[visitorId]) {
+      delete analytics[visitorId];
+      await writeEncryptedStore(analyticsStore, analytics);
+    }
+  }
+  res.cookie("lapped_analytics_opt_out", "1", { httpOnly: true, sameSite: "lax", secure: Boolean(process.env.RENDER_EXTERNAL_URL) || process.env.NODE_ENV === "production", path: "/", maxAge: 365 * 24 * 60 * 60 * 1000 });
+}
+
 app.use((req, res, next) => {
-  if (req.method === "GET" && req.path === "/") {
+  if (req.method === "GET" && req.path === "/" && cookieValue(req, "lapped_analytics_opt_out") !== "1") {
     const visitorId = visitorIdFor(req, res);
     recordAnalyticsEvent(visitorId, "visit").catch((error) => console.error("Analytics visit failed:", error.message));
   }
@@ -260,25 +280,49 @@ function formatJoinedAt(value) {
   return Number.isNaN(date.getTime()) ? "before tracking" : new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(date);
 }
 
-function adminPage(tokens, analytics) {
-  const athletes = Object.values(tokens);
-  const rows = athletes.map((token) => {
+function trafficSeries(analytics, range) {
+  const now = new Date();
+  const days = range === "today" ? 1 : range === "week" ? 7 : 30;
+  const output = [];
+  for (let offset = days - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
+    const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+    output.push({ label: range === "today" ? "" : key.slice(5), value: Object.values(analytics).reduce((sum, visitor) => sum + (visitor.days?.[key]?.visits || 0), 0) });
+  }
+  if (range === "today") {
+    const key = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+    return Array.from({ length: 24 }, (_, hour) => ({ label: hour % 3 === 0 ? `${hour}:00` : "", value: Object.values(analytics).reduce((sum, visitor) => sum + (visitor.days?.[key]?.hours?.[String(hour).padStart(2, "0")] || 0), 0) }));
+  }
+  return output;
+}
+
+function chartHtml(analytics, range) {
+  const points = trafficSeries(analytics, range), max = Math.max(1, ...points.map((point) => point.value));
+  return `<div class="chart" data-range="${range}"${range === "today" ? "" : " hidden"}>${points.map((point) => `<div class="bar"><i style="height:${Math.max(3, Math.round((point.value / max) * 100))}%" title="${point.value} visits"></i><span>${point.label}</span></div>`).join("")}</div>`;
+}
+
+function adminPage(tokens, analytics, { page, query }) {
+  const athletes = Object.values(tokens).sort((a, b) => String(b.connected_at || "").localeCompare(String(a.connected_at || "")));
+  const filtered = query ? athletes.filter((token) => `${token.athlete?.firstname || ""} ${token.athlete?.lastname || ""} ${token.athlete?.id || ""}`.toLowerCase().includes(query.toLowerCase())) : athletes;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 10));
+  const safePage = Math.min(Math.max(1, page), pageCount);
+  const rows = filtered.slice((safePage - 1) * 10, safePage * 10).map((token) => {
     const athlete = token.athlete || {};
     const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
     return `<tr><td>${escapeHtml(name)}</td><td>${escapeHtml(athlete.id)}</td><td>${escapeHtml(formatJoinedAt(token.connected_at))}</td><td>connected</td></tr>`;
-  }).join("") || `<tr><td colspan="4">No connected athletes yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="4">No connected athletes found.</td></tr>`;
   const visitors = Object.values(analytics);
   const started = visitors.filter((visitor) => visitor.connectStarted).length;
-  const connected = visitors.filter((visitor) => visitor.connected).length;
-  const conversion = visitors.length ? `${Math.round((connected / visitors.length) * 100)}%` : "—";
+  const pagination = pageCount > 1 ? `<nav class="pages">${Array.from({ length: pageCount }, (_, index) => { const number = index + 1; return `<a ${number === safePage ? 'aria-current="page"' : ""} href="/admin?page=${number}${query ? `&q=${encodeURIComponent(query)}` : ""}">${number}</a>`; }).join("")}</nav>` : "";
   return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
-    :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label{color:var(--muted);font-size:12px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 64px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}@media(max-width:600px){body{padding:20px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:50px}.panel-head{display:block}.panel-head p{margin-top:8px}}
-  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics" aria-label="Visitor conversion"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div><div class="metric"><strong>${conversion}</strong><span>visitor → connected</span></div></section><section class="panel"><div class="panel-head"><h2>People connected to Lapped</h2><p>Private, anonymous analytics · 90-day retention.</p></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table></section></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};</script></body></html>`;
+    :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label{color:var(--muted);font-size:12px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 42px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.chart-panel{margin-bottom:64px}.chart-tabs{display:flex;gap:8px;margin:15px 0}.chart-tabs button,.pages a{background:none;color:var(--muted);border:1px solid var(--line);padding:7px 10px;font:12px Arial;cursor:pointer;text-decoration:none}.chart-tabs button[aria-pressed="true"],.pages a[aria-current="page"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}.chart{height:170px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--line);padding-top:12px}.chart[hidden]{display:none}.bar{height:100%;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:end;gap:6px}.bar i{display:block;background:var(--accent);min-height:3px}.bar span{display:block;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-align:center}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}.search{display:flex;gap:8px}.search input{background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px;font:13px Arial}.search button{background:var(--ink);color:var(--paper);border:0;padding:8px 10px;font:13px Arial}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}.pages{display:flex;gap:5px;margin-top:18px}@media(max-width:600px){body{padding:20px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:40px}.panel-head{display:block}.panel-head p{margin-top:8px}.search{margin-top:14px}table{font-size:12px}th:nth-child(2),td:nth-child(2){display:none}}
+  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2><p>Anonymous · excludes this admin browser.</p></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section><section class="panel"><div class="panel-head"><div><h2>People connected to Lapped</h2><p>10 per page · joined dates start from this release.</p></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID"><button>search</button></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)})</script></body></html>`;
 }
 
 async function requireAdmin(req, res, next) {
   try {
     if (hasValidAdminCookie(req)) {
+      await excludeAdminFromAnalytics(req, res);
       req.connectedTokens = await readTokens();
       return next();
     }
@@ -289,6 +333,7 @@ async function requireAdmin(req, res, next) {
     const sessionAthleteId = String(req.session.strava.athlete?.id || "");
     if (!isAdminAthlete(sessionAthleteId)) return res.status(403).send("Admin access is not available for this Strava account.");
     setAdminCookie(res, sessionAthleteId);
+    await excludeAdminFromAnalytics(req, res);
     const tokens = await readTokens();
     req.connectedTokens = tokens;
     next();
@@ -480,7 +525,7 @@ async function scanActivityWithToken(token, activityId, athleteId) {
 
 app.get("/auth/strava", (req, res) => {
   if (configError) return res.status(503).send(`Missing configuration: ${configError}`);
-  recordAnalyticsEvent(visitorIdFor(req, res), "connect").catch((error) => console.error("Analytics connect failed:", error.message));
+  if (cookieValue(req, "lapped_analytics_opt_out") !== "1") recordAnalyticsEvent(visitorIdFor(req, res), "connect").catch((error) => console.error("Analytics connect failed:", error.message));
   const now = Date.now();
   const ip = req.ip || "unknown";
   const recentRequests = (oauthRequestsByIp.get(ip) || []).filter((time) => now - time < oauthWindowMs);
@@ -513,7 +558,7 @@ app.get("/auth/strava/complete", async (req, res, next) => {
     if (!response.ok) throw new Error("Strava did not authorize the app.");
     req.session.strava = await response.json();
     await saveToken(req.session.strava);
-    await recordAnalyticsEvent(visitorIdFor(req, res), "connected");
+    if (cookieValue(req, "lapped_analytics_opt_out") !== "1") await recordAnalyticsEvent(visitorIdFor(req, res), "connected");
     delete req.session.oauthState;
     const returnTo = req.session.returnTo || "/?connected=1";
     delete req.session.returnTo;
@@ -525,7 +570,9 @@ app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.s
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
-    res.type("html").send(adminPage(req.connectedTokens, await readEncryptedStore(analyticsStore)));
+    const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+    const query = String(req.query.q || "").slice(0, 80);
+    res.type("html").send(adminPage(req.connectedTokens, await readEncryptedStore(analyticsStore), { page, query }));
   } catch (error) { next(error); }
 });
 app.post("/api/activities/:id/scan", async (req, res, next) => {
