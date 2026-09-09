@@ -30,3 +30,5 @@ services:
         sync: false
       - key: ADMIN_ATHLETE_ID
         sync: false
+      - key: APP_URL
+        sync: false

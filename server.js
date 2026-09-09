@@ -9,6 +9,10 @@ const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT
 const configError = required.filter((name) => !process.env[name]).join(", ");
 const app = express();
 const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+const publicSiteHost = "lapped.fit";
+// Older activity receipts used the former Render hostname. Build it from parts
+// so those receipts are still replaced without publishing that legacy address.
+const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
@@ -230,15 +234,15 @@ async function scanActivityWithToken(token, activityId) {
   const stamp = [
     `laps: ${lapCount}`,
     fastestLap && `fastest lap: ${fastestLap}`,
-    "lapped.onrender.com"
+    publicSiteHost
   ].filter(Boolean).join("\n");
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
   const existing = (activity.description || "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
-    .replace(/(?:^|\n)Loops: \d+(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/gi, "")
-    .replace(/(?:^|\n)Laps: \d+(?:\nfastest lap: [^\n]+)?(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/gi, "")
-    .replace(/(?:^|\n)L O O P S : \d+(?:\nlapped\.onrender\.com)?(?=\n|$)/g, "")
+    .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:${legacyReceiptHost.replace(/\\./g, "\\\\.")}|${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)L O O P S : \\d+(?:\\n${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "g"), "")
     .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
   // Strava also emits an update event for our own description write. Do not
