@@ -118,12 +118,12 @@ async function scanActivityWithToken(token, activityId) {
   const lapCount = (activity.segment_efforts || []).filter(isTargetEffort).length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = `L O O P S : ${lapCount}\nlapped.onrender.com`;
+  const stamp = `Loops: ${lapCount}\nlapped.onrender.com`;
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
   const existing = (activity.description || "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
-    .replace(/(?:^|\n)Loops: \d+(?:\nhttps:\/\/lapped\.onrender\.com)?(?=\n|$)/g, "")
+    .replace(/(?:^|\n)Loops: \d+(?:\n(?:https:\/\/)?lapped\.onrender\.com)?(?=\n|$)/g, "")
     .replace(/(?:^|\n)L O O P S : \d+(?:\nlapped\.onrender\.com)?(?=\n|$)/g, "")
     .trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
