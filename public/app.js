@@ -1,4 +1,5 @@
 const status = document.querySelector("#status"), connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
+const lapStats = document.querySelector("#lap-stats"), lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), ytdLapsLabel = document.querySelector("#ytd-laps-label");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -14,7 +15,18 @@ themeToggle.onchange = () => {
 };
 fetch("/api/status").then(r => r.json()).then(data => {
   if (!data.configured) { status.textContent = "Setup needed"; connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
-  if (data.connected) { status.textContent = "Strava connected"; connect.hidden = true; disconnect.hidden = false; }
+  if (data.connected) {
+    status.textContent = "Strava connected";
+    connect.hidden = true;
+    disconnect.hidden = false;
+    fetch("/api/lap-stats").then(r => r.ok ? r.json() : null).then(stats => {
+      if (!stats?.available) return;
+      lifetimeLaps.textContent = stats.lifetime;
+      ytdLaps.textContent = stats.ytd;
+      ytdLapsLabel.textContent = `${stats.year} laps`;
+      lapStats.hidden = false;
+    }).catch(() => {});
+  }
   else status.textContent = "Ready to connect";
 }).catch(() => status.textContent = "Server unavailable");
 disconnect.onclick = async () => { await fetch("/auth/disconnect", { method: "POST" }); location.reload(); };
