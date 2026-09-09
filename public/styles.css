@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
 :root{--ink:#f2eee7;--paper:#191a18;--red:#fc4c02;--muted:#aaa69e;--route-bg:#30372d;--park:#596052;--route:#f2eee7;--route-meta:#c6cbbd}
 html[data-theme="light"]{--ink:#20201e;--paper:#f3f0ea;--red:#fc4c02;--muted:#6f6b65;--route-bg:#dcdfcf;--park:#b5bbac;--route:#20201e;--route-meta:#4f5549}
 *{box-sizing:border-box}
@@ -16,15 +16,14 @@ nav{display:flex;align-items:center;justify-content:space-between;font-size:13px
 .intro{display:grid;grid-template-columns:1.12fr .88fr;gap:45px;align-items:end;padding:102px 0 78px}
 .kicker,.route-meta,figcaption,.status,small,.notes>p:first-child{font-size:12px;letter-spacing:.01em;color:var(--muted);margin:0}
 .kicker{margin-bottom:20px}
-h1{font-family:Lora,Georgia,"Times New Roman",serif;font-size:clamp(60px,8.7vw,110px);letter-spacing:-.075em;line-height:.9;font-weight:700;margin:0 0 38px;max-width:720px}
+h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(60px,8.7vw,110px);letter-spacing:-.075em;line-height:.9;font-weight:400;margin:0 0 38px;max-width:720px}
 h1 span{display:block}
 h1 span+span{margin-top:18px}
-.title-sans{font-family:Manrope,Arial,Helvetica,sans-serif;font-size:.68em;font-weight:700;letter-spacing:-.075em;line-height:1;white-space:nowrap}
-.title-serif{font-family:Lora,Georgia,"Times New Roman",serif;letter-spacing:-.085em;line-height:.9}
+.title-sans,.title-serif{font-family:Georgia,"Times New Roman",serif;font-size:1em;font-weight:400;letter-spacing:-.075em;line-height:.9;white-space:normal}
 .lede{max-width:475px;font-size:18px;line-height:1.36;letter-spacing:-.025em;margin:0 0 32px}
 .text-link{font-size:14px;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--ink);padding-bottom:5px}
 .text-link span{font-size:17px;margin-left:7px}
-.route-card{height:300px;background:var(--route-bg);position:relative;margin:0;padding:17px 18px 14px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;transition:background .25s}
+.route-card{height:300px;background:var(--route-bg);position:relative;margin:0;padding:17px 18px 14px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;transition:background .25s,transform .45s cubic-bezier(.22,1,.36,1);animation:float-in .8s cubic-bezier(.22,1,.36,1) both .18s}
 .route-card:after{content:"";position:absolute;width:300px;height:300px;border:1px solid rgba(180,180,170,.16);border-radius:50%;right:-110px;bottom:-135px}
 .route-meta{display:flex;justify-content:space-between;color:var(--route-meta);position:relative;z-index:1}
 .place{display:flex;gap:5px;align-items:center}
@@ -32,7 +31,7 @@ h1 span+span{margin-top:18px}
 .place svg circle{fill:currentColor;stroke:none}
 .route-card svg{width:100%;height:214px;z-index:1;margin:auto}
 .park{fill:none;stroke:var(--park);stroke-width:1.4;stroke-linecap:round}
-.route{fill:none;stroke:var(--route);stroke-width:7;stroke-linecap:round;stroke-linejoin:round}
+.route{fill:none;stroke:var(--route);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1800;stroke-dashoffset:1800;animation:route-reveal 1.8s cubic-bezier(.22,1,.36,1) forwards .38s}
 .rider{fill:var(--red);stroke:none}
 .start{fill:var(--paper);stroke:var(--red);stroke-width:3}
 .end{fill:var(--red)}
@@ -51,13 +50,19 @@ h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .notes em{font-style:normal;font-size:20px;letter-spacing:-.05em}
 .notes a{color:var(--ink);font-size:12px;text-underline-offset:3px}
 .notes p:last-child{color:var(--muted);max-width:290px}
+.copy{animation:float-in .8s cubic-bezier(.22,1,.36,1) both}
+.connect-card,.notes{animation:fade-up .7s ease both .42s}
+.route-card:hover{transform:translateY(-4px)}
+@keyframes float-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fade-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes route-reveal{to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
 @media(max-width:720px){main{padding:21px 20px 35px}
 .nav-right{gap:9px}
 .intro{grid-template-columns:1fr;padding:72px 0 53px;gap:46px}
 .route-card{height:310px}
 h1{font-size:clamp(60px,17vw,92px);line-height:.9}
 h1 span+span{margin-top:15px}
-.title-sans{font-size:.64em}
 .connect-card{grid-template-columns:1fr;gap:25px}
 .notes{grid-template-columns:1fr;gap:15px;padding-top:24px}
 .lede{font-size:17px}
