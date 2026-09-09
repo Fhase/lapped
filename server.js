@@ -245,7 +245,7 @@ async function scanActivityWithToken(token, activityId) {
   const stamp = [
     `laps: ${lapCount}`,
     fastestLap && `fastest lap: ${fastestLap}`,
-    publicSiteHost
+    `https://${publicSiteHost}`
   ].filter(Boolean).join("\n");
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
