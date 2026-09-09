@@ -75,7 +75,11 @@ app.use(express.static("public"));
 
 const strava = async (path, options = {}) => {
   const response = await fetch(`https://www.strava.com/api/v3${path}`, options);
-  if (!response.ok) throw new Error(`Strava returned ${response.status}: ${await response.text()}`);
+  if (!response.ok) {
+    const error = new Error(`Strava returned ${response.status}: ${await response.text()}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 };
 
@@ -295,7 +299,10 @@ async function countSegmentEfforts(token, start, end) {
 async function getLapStats(token, athleteId) {
   const stats = await readLapStats();
   const cached = stats[athleteId];
-  if (cached?.version === 3 && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
+  if (cached?.version === 4) {
+    if (cached.rateLimited && Date.now() < cached.retryAt) return cached;
+    if (!cached.rateLimited && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
+  }
 
   try {
     const segment = await strava(`/segments/${segmentId}`, stravaHeaders(token));
@@ -303,14 +310,24 @@ async function getLapStats(token, athleteId) {
     if (!Number.isFinite(lifetime)) throw new Error("Strava returned 403: segment history unavailable");
     const now = new Date();
     const year = now.getUTCFullYear();
-    const ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
-    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now(), version: 3 };
+    let ytd;
+    try {
+      ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
+    } catch (error) {
+      if (error.status !== 429) throw error;
+      const retryAt = (Math.floor(Date.now() / (15 * 60 * 1000)) + 1) * 15 * 60 * 1000 + 1000;
+      const result = { available: true, lifetime, ytd: null, year, rateLimited: true, retryAt, checkedAt: Date.now(), version: 4 };
+      stats[athleteId] = result;
+      await writeEncryptedStore(lapStatsStore, stats);
+      return result;
+    }
+    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now(), version: 4 };
     stats[athleteId] = result;
     await writeEncryptedStore(lapStatsStore, stats);
     return result;
   } catch (error) {
     if (!/Strava returned (?:401|403|404)/.test(error.message)) throw error;
-    stats[athleteId] = { available: false, checkedAt: Date.now(), version: 3 };
+    stats[athleteId] = { available: false, checkedAt: Date.now(), version: 4 };
     await writeEncryptedStore(lapStatsStore, stats);
     return null;
   }
@@ -441,7 +458,10 @@ app.get("/api/lap-stats", async (req, res, next) => {
     const athleteId = req.session.strava.athlete?.id;
     const stats = await getLapStats(token, athleteId);
     res.json(stats || { available: false });
-  } catch (error) { next(error); }
+  } catch (error) {
+    if (error.status === 429) return res.status(429).json({ available: false, rateLimited: true });
+    next(error);
+  }
 });
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, (req, res) => {

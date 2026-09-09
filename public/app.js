@@ -27,11 +27,16 @@ fetch("/api/status").then(r => r.json()).then(data => {
     lapLink.innerHTML = "see laps <span>↓</span>";
     connect.hidden = true;
     disconnect.hidden = false;
-    fetch("/api/lap-stats").then(r => r.ok ? r.json() : null).then(stats => {
-      if (!stats?.available) return;
+    fetch("/api/lap-stats").then(async r => r.json().catch(() => null)).then(stats => {
+      if (!stats?.available) {
+        if (stats?.rateLimited) ytdLapsLabel.textContent = "Strava is refreshing";
+        return;
+      }
       lifetimeLaps.textContent = stats.lifetime;
-      ytdLaps.textContent = stats.ytd;
-      ytdLapsLabel.textContent = `${stats.year} laps`;
+      if (Number.isFinite(stats.ytd)) {
+        ytdLaps.textContent = stats.ytd;
+        ytdLapsLabel.textContent = `${stats.year} laps`;
+      } else if (stats.rateLimited) ytdLapsLabel.textContent = "Strava is refreshing";
     }).catch(() => {});
   }
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
