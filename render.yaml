@@ -28,3 +28,5 @@ services:
         sync: false
       - key: STRAVA_CLIENT_SECRET
         sync: false
+      - key: ADMIN_ATHLETE_ID
+        sync: false

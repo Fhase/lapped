@@ -24,16 +24,35 @@ const pendingOAuthStates = new Map();
 const defaultAdminAthleteHash = "cbed8490189459b6fb84700492174b34db9035e0cc8461fc5bf43a4fc1ecf4af";
 const adminCookieName = "lapped_admin";
 const adminCookieLifetimeMs = 30 * 24 * 60 * 60 * 1000;
+const oauthWindowMs = 10 * 60 * 1000;
+const oauthRequestsByIp = new Map();
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
 app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use((_req, res, next) => {
+  res.set({
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin"
+  });
+  next();
+});
 app.use(express.json());
 app.use(session({
+  name: "lapped_session",
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
-  cookie: { sameSite: "lax", secure: process.env.NODE_ENV === "production" }
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: Boolean(process.env.RENDER_EXTERNAL_URL) || process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  }
 }));
 app.use(express.static("public"));
 
@@ -235,6 +254,15 @@ async function scanActivityWithToken(token, activityId) {
 
 app.get("/auth/strava", (req, res) => {
   if (configError) return res.status(503).send(`Missing configuration: ${configError}`);
+  const now = Date.now();
+  const ip = req.ip || "unknown";
+  const recentRequests = (oauthRequestsByIp.get(ip) || []).filter((time) => now - time < oauthWindowMs);
+  if (recentRequests.length >= 12) return res.status(429).send("Please wait a few minutes before trying Strava again.");
+  recentRequests.push(now);
+  oauthRequestsByIp.set(ip, recentRequests);
+  for (const [state, issuedAt] of pendingOAuthStates) {
+    if (now - issuedAt >= oauthWindowMs) pendingOAuthStates.delete(state);
+  }
   const state = crypto.randomBytes(24).toString("hex");
   req.session.oauthState = state;
   pendingOAuthStates.set(state, Date.now());
