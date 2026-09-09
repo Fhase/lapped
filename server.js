@@ -122,6 +122,9 @@ async function scanActivityWithToken(token, activityId) {
   // Do not overwrite the user's writing. The extension adds/replaces only its own line.
   const existing = (activity.description || "").replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "").trim();
   const description = [existing, stamp].filter(Boolean).join("\n");
+  // Strava also emits an update event for our own description write. Do not
+  // write an identical value back and accidentally create a webhook loop.
+  if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   await strava(`/activities/${activityId}`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
