@@ -341,7 +341,12 @@ async function scanActivityWithToken(token, activityId, athleteId) {
 
   const fastestLap = formatFastestLap(targetEfforts);
   let lapStats = null;
-  try { lapStats = await getLapStats(token, athleteId); } catch (error) {
+  try {
+    lapStats = await Promise.race([
+      getLapStats(token, athleteId),
+      new Promise((resolve) => setTimeout(() => resolve(null), 10000))
+    ]);
+  } catch (error) {
     console.error("Lap stats lookup failed:", error.message);
   }
   const stamp = [
