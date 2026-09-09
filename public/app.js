@@ -33,3 +33,17 @@ disconnect.onclick = async () => {
   disconnect.disabled = true;
   try { await fetch("/auth/disconnect", { method: "POST" }); } finally { location.reload(); }
 };
+const featureRequestForm = document.querySelector("#feature-request-form"), featureRequestStatus = document.querySelector("#feature-request-status");
+featureRequestForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = featureRequestForm.querySelector("button"), request = new FormData(featureRequestForm).get("request")?.trim();
+  if (!request) return;
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/feature-requests", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request }) });
+    if (!response.ok) throw new Error("Could not send request.");
+    featureRequestForm.reset();
+    featureRequestStatus.textContent = "Thanks for submitting your request.";
+  } catch (_) { featureRequestStatus.textContent = "Could not submit right now. Try again shortly."; }
+  finally { button.disabled = false; }
+});

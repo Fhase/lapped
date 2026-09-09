@@ -22,6 +22,7 @@ const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathn
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
+const featureRequestsStore = path.join(dataDir, "feature-requests.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -193,6 +194,15 @@ async function saveToken(token) {
   return writeEncryptedStore(tokenStore, tokens);
 }
 
+async function saveFeatureRequest(text) {
+  const stored = await readEncryptedStore(featureRequestsStore);
+  const requests = Array.isArray(stored) ? stored : [];
+  const request = { id: crypto.randomUUID(), text, created_at: new Date().toISOString(), status: "new" };
+  requests.unshift(request);
+  await writeEncryptedStore(featureRequestsStore, requests.slice(0, 500));
+  return request;
+}
+
 async function removeConnectedAthlete(athleteId) {
   if (!athleteId) return;
   const tokens = await readTokens();
@@ -319,12 +329,18 @@ function connectedAthletePage(tokens, page, query) {
 }
 
 const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}</style><script>
-let searchForm=document.querySelector('.search');const cleanForm=searchForm?.cloneNode(true);if(cleanForm){searchForm.replaceWith(cleanForm);searchForm=cleanForm}let searchInput=searchForm?.querySelector('input');searchForm?.addEventListener('submit',event=>event.preventDefault());const tableBody=document.querySelector('tbody'),pages=document.querySelector('.pages');let searchTimer;
+let searchForm=document.querySelector('.search');if(searchForm)searchForm.submit=()=>{};const cleanForm=searchForm?.cloneNode(true);if(cleanForm){searchForm.replaceWith(cleanForm);searchForm=cleanForm}let searchInput=searchForm?.querySelector('input');searchForm?.addEventListener('submit',event=>event.preventDefault());const tableBody=document.querySelector('tbody'),pages=document.querySelector('.pages');let searchTimer;
 function renderAthletes(data){tableBody.replaceChildren();if(!data.items.length){const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=4;cell.textContent='No connected athletes found.';row.append(cell);tableBody.append(row)}else{data.items.forEach(item=>{const row=document.createElement('tr');[item.name,item.id,item.joined,item.status].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell)});tableBody.append(row)})}pages.replaceChildren();for(let number=1;number<=data.pageCount;number+=1){const link=document.createElement('a');link.href='#';link.textContent=number;if(number===data.page)link.setAttribute('aria-current','page');link.onclick=(event)=>{event.preventDefault();loadAthletes(number)};pages.append(link)}}
 async function loadAthletes(page=1){const params=new URLSearchParams({page:String(page),q:searchInput.value});const response=await fetch('/admin/athletes?'+params);if(!response.ok)return;const data=await response.json();renderAthletes(data)}
 searchInput?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadAthletes(1),220)});
 pages?.querySelectorAll('a').forEach(link=>link.onclick=(event)=>{event.preventDefault();loadAthletes(Number(link.textContent))});
 </script>`;
+
+function ticketPanel(stored) {
+  const requests = Array.isArray(stored) ? stored : [];
+  const items = requests.slice(0, 50).map((request) => `<article class="ticket" data-ticket-id="${escapeHtml(request.id)}"><div><p>${escapeHtml(request.text)}</p><small>${escapeHtml(formatJoinedAt(request.created_at))} · ${escapeHtml(request.status || "new")}</small></div><div class="ticket-actions"><button data-ticket-action="unread">unread</button><button data-ticket-action="archive">archive</button><button data-ticket-action="delete">delete</button></div></article>`).join("") || "<p class=\"ticket-empty\">No feature requests yet.</p>";
+  return `<style>.tickets{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.tickets h2{font-size:15px;margin:0 0 18px}.ticket{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding:16px 0}.ticket p{margin:0 0 8px;font-size:14px;line-height:1.45}.ticket small,.ticket-empty{color:var(--muted);font-size:12px}.ticket-actions{display:flex;gap:6px;align-self:start}.ticket-actions button{background:transparent;color:var(--muted);border:1px solid var(--line);padding:6px 7px;font:11px Arial;cursor:pointer}.ticket-actions button:last-child{color:var(--accent)}@media(max-width:600px){.ticket{display:block}.ticket-actions{margin-top:12px}}</style><section class="tickets"><h2>Feature requests</h2>${items}</section><script>document.querySelectorAll('[data-ticket-action]').forEach(button=>button.onclick=async()=>{const ticket=button.closest('[data-ticket-id]'),action=button.dataset.ticketAction;const response=await fetch('/admin/tickets/'+ticket.dataset.ticketId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){ticket.remove()}})</script>`;
+}
 
 function adminPage(tokens, analytics, { page, query }) {
   const athletes = Object.values(tokens).sort((a, b) => String(b.connected_at || "").localeCompare(String(a.connected_at || "")));
@@ -592,19 +608,42 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.post("/api/feature-requests", async (req, res, next) => {
+  try {
+    const text = String(req.body?.request || "").trim().replace(/\s+/g, " ");
+    if (text.length < 3 || text.length > 500) return res.status(400).json({ error: "Please keep requests between 3 and 500 characters." });
+    await saveFeatureRequest(text);
+    res.status(201).json({ ok: true });
+  } catch (error) { next(error); }
+});
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
     const query = String(req.query.q || "").slice(0, 80);
-    const pageHtml = adminPage(req.connectedTokens, await readEncryptedStore(analyticsStore), { page, query });
-    res.type("html").send(pageHtml.replace("</body>", `${adminEnhancements}</body>`));
+    const [analytics, tickets] = await Promise.all([readEncryptedStore(analyticsStore), readEncryptedStore(featureRequestsStore)]);
+    const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
+    res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${ticketPanel(tickets)}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
   } catch (error) { next(error); }
 });
 app.get("/admin/athletes", requireAdmin, (req, res) => {
   const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
   const query = String(req.query.q || "").slice(0, 80);
   res.json(connectedAthletePage(req.connectedTokens, page, query));
+});
+app.post("/admin/tickets/:id", requireAdmin, async (req, res, next) => {
+  try {
+    const action = String(req.body?.action || "");
+    if (!new Set(["unread", "archive", "delete"]).has(action)) return res.status(400).json({ error: "Invalid action." });
+    const stored = await readEncryptedStore(featureRequestsStore);
+    const requests = Array.isArray(stored) ? stored : [];
+    const index = requests.findIndex((request) => request.id === req.params.id);
+    if (index === -1) return res.sendStatus(404);
+    if (action === "delete") requests.splice(index, 1);
+    else requests[index].status = action;
+    await writeEncryptedStore(featureRequestsStore, requests);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
 });
 app.post("/api/activities/:id/scan", async (req, res, next) => {
   try { res.json(await scanActivity(req, req.params.id)); } catch (error) { next(error); }
