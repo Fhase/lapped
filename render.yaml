@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: high-park-laps
+    runtime: node
+    plan: 0.5c-512mb
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    disk:
+      name: high-park-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATA_DIR
+        value: /var/data
+      - key: HIGH_PARK_SEGMENT_ID
+        value: "16091644"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: STRAVA_VERIFY_TOKEN
+        generateValue: true
+      - key: STRAVA_CLIENT_ID
+        sync: false
+      - key: STRAVA_CLIENT_SECRET
+        sync: false
