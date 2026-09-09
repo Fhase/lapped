@@ -1,5 +1,50 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Lapped — High Park</title><link rel="stylesheet" href="/styles.css"/></head><body>
-<main><p class="eyebrow">LAPPED • TORONTO</p><h1>Every lap,<br/><em>counted.</em></h1><p class="lede">Lapped is your High Park Strava companion. It adds your lap count only when Strava confirms you completed the full segment.</p>
-<section class="card"><div class="signal"><span></span><b id="status">Checking setup…</b></div><h2>Connect your rides</h2><p>We read segment efforts and request permission to update the description of your own activities. No complete High Park lap means no description change.</p><a class="button" id="connect" href="/auth/strava">Connect with Strava <span>→</span></a><button id="disconnect" hidden>Disconnect</button></section>
-<section class="how"><div><small>01</small><h3>Ride your route</h3><p>Track a ride that includes the full High Park Lap segment.</p></div><div><small>02</small><h3>Open the activity</h3><p>Use the companion extension from your Strava activity page.</p></div><div><small>03</small><h3>See the count</h3><p>“High Park laps: 3” is added only when there are completed efforts.</p></div></section>
-<p class="fine">Your existing ride notes stay intact. The counter line is refreshed on re-scan.</p></main><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lapped — High Park</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main>
+    <nav><a class="wordmark" href="/">Lapped</a><span>High Park, Toronto</span></nav>
+    <section class="intro">
+      <div class="copy">
+        <p class="kicker">for the park loop</p>
+        <h1>Counts your laps.<br />That’s it.</h1>
+        <p class="lede">Lapped adds a lap count to your Strava activity when you finish the High Park loop. If you don’t, it leaves your ride alone.</p>
+        <a class="text-link" href="#connect-card">get lapped <span>↓</span></a>
+      </div>
+      <figure class="route-card" aria-label="A simplified line drawing of the High Park circuit">
+        <div class="route-meta"><span>the loop</span><span>1.85 km</span></div>
+        <svg viewBox="0 0 560 580" role="img" aria-label="High Park loop route">
+          <path class="park" d="M23 65 C98 7 186 5 266 38 C343 7 438 37 519 104 M68 478 C137 550 240 566 321 536 C396 574 488 522 527 441 M45 100 C8 220 19 374 68 478 M519 104 C563 210 559 347 527 441" />
+          <path class="route" d="M274 36 C272 91 260 137 225 177 C190 216 165 250 171 297 C178 345 195 386 228 426 C257 462 299 482 342 482 C392 482 430 450 441 405 C452 360 430 315 410 269 C385 209 354 138 318 86 C301 62 288 45 274 36 Z" />
+          <circle class="start" cx="274" cy="36" r="8" />
+          <circle class="end" cx="274" cy="36" r="3" />
+        </svg>
+        <figcaption>High Park circuit</figcaption>
+      </figure>
+    </section>
+    <section class="connect-card" id="connect-card">
+      <div>
+        <p class="status"><i></i><b id="status">Checking setup…</b></p>
+        <h2>Ride. Save. Done.</h2>
+        <p>Once connected, completed loops get a simple count in your activity description. Your own notes stay yours.</p>
+      </div>
+      <div class="actions">
+        <a class="button" id="connect" href="/auth/strava">Connect Strava <span>→</span></a>
+        <button id="disconnect" hidden>Disconnect</button>
+        <small>Only completed High Park laps count.</small>
+      </div>
+    </section>
+    <section class="notes">
+      <p>the only receipt you need</p>
+      <p><em>High Park laps: 3</em></p>
+      <p>Built for post-ride scrolling, not another training dashboard.</p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
