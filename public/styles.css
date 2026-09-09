@@ -13,7 +13,7 @@ nav{display:flex;align-items:center;justify-content:space-between;font-size:13px
 .toggle-track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}
 .toggle-track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s,background .2s}
 .theme-toggle input:checked+.toggle-track i{transform:translateX(12px);background:var(--ink)}
-.intro{display:grid;grid-template-columns:1.12fr .88fr;gap:45px;align-items:end;padding:102px 0 78px}
+.intro{display:grid;grid-template-columns:1.12fr .88fr;gap:45px;align-items:start;padding:102px 0 78px}
 .kicker,.route-meta,figcaption,.status,small,.notes>p:first-child{font-size:12px;letter-spacing:.01em;color:var(--muted);margin:0}
 .kicker{margin-bottom:20px}
 h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(60px,8.7vw,110px);letter-spacing:-.075em;line-height:.9;font-weight:400;margin:0 0 38px;max-width:720px}
