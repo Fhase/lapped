@@ -259,26 +259,28 @@ function stravaHeaders(token) {
 }
 
 async function countSegmentEfforts(token, start, end) {
-  const params = new URLSearchParams({
-    segment_id: segmentId,
-    start_date_local: start.toISOString(),
-    end_date_local: end.toISOString(),
-    per_page: "200"
-  });
-  const efforts = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
-  if (efforts.length < 200 || end - start <= 24 * 60 * 60 * 1000) return efforts.length;
-  const middle = new Date(start.getTime() + Math.floor((end - start) / 2));
-  const [firstHalf, secondHalf] = await Promise.all([
-    countSegmentEfforts(token, start, middle),
-    countSegmentEfforts(token, middle, end)
-  ]);
-  return firstHalf + secondHalf;
+  let total = 0;
+  // Strava may return a short page before the last page, so keep paginating
+  // until it explicitly returns an empty page rather than trusting page length.
+  for (let page = 1; page <= 100; page += 1) {
+    const params = new URLSearchParams({
+      segment_id: segmentId,
+      start_date_local: start.toISOString(),
+      end_date_local: end.toISOString(),
+      page: String(page),
+      per_page: "200"
+    });
+    const efforts = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
+    if (!efforts.length) return total;
+    total += efforts.length;
+  }
+  throw new Error("Strava segment effort pagination exceeded its safe limit.");
 }
 
 async function getLapStats(token, athleteId) {
   const stats = await readLapStats();
   const cached = stats[athleteId];
-  if (cached && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
+  if (cached?.version === 2 && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
 
   try {
     const segment = await strava(`/segments/${segmentId}`, stravaHeaders(token));
@@ -287,13 +289,13 @@ async function getLapStats(token, athleteId) {
     const now = new Date();
     const year = now.getUTCFullYear();
     const ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
-    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now() };
+    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now(), version: 2 };
     stats[athleteId] = result;
     await writeEncryptedStore(lapStatsStore, stats);
     return result;
   } catch (error) {
     if (!/Strava returned (?:401|403|404)/.test(error.message)) throw error;
-    stats[athleteId] = { available: false, checkedAt: Date.now() };
+    stats[athleteId] = { available: false, checkedAt: Date.now(), version: 2 };
     await writeEncryptedStore(lapStatsStore, stats);
     return null;
   }
