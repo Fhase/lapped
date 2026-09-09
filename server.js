@@ -170,4 +170,4 @@ app.post("/webhook", (req, res) => {
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
-app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER ? "0.0.0.0" : "127.0.0.1"), () => console.log(`Lapped running at ${baseUrl}`));
+app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER_EXTERNAL_URL ? "0.0.0.0" : "127.0.0.1"), () => console.log(`Lapped running at ${baseUrl}`));
