@@ -9,6 +9,8 @@ const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT
 const configError = required.filter((name) => !process.env[name]).join(", ");
 const app = express();
 const baseUrl = process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000";
+const canonicalUrl = new URL(baseUrl);
+const renderHost = process.env.RENDER_EXTERNAL_URL ? new URL(process.env.RENDER_EXTERNAL_URL).host : null;
 const publicSiteHost = "lapped.fit";
 // Older activity receipts used the former Render hostname. Build it from parts
 // so those receipts are still replaced without publishing that legacy address.
@@ -58,6 +60,15 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
+// The Render service address is kept only for infrastructure compatibility.
+// Visitors always land on the owned Lapped domain. Webhooks stay reachable on
+// their registered callback while Strava's dashboard is being migrated.
+app.use((req, res, next) => {
+  if (renderHost && req.hostname === renderHost && !req.path.startsWith("/webhook")) {
+    return res.redirect(308, new URL(req.originalUrl, canonicalUrl).toString());
+  }
+  next();
+});
 app.use(express.static("public"));
 
 const strava = async (path, options = {}) => {

@@ -52,7 +52,7 @@ STRAVA_VERIFY_TOKEN=
 
 `render.yaml` creates the web service and a 1 GB persistent disk for encrypted token data. In Render, enter the Strava client ID, client secret, and the owner athlete ID as protected environment variables. Set `APP_URL` to the public URL when using a custom domain. Then set that hostname as the Strava application's authorization callback domain and register `https://<your-host>/webhook` as the Strava webhook callback.
 
-The live Lapped deployment is at [lapped.fit](https://lapped.fit).
+The canonical live Lapped deployment is [lapped.fit](https://lapped.fit), including the private owner page at [lapped.fit/admin](https://lapped.fit/admin).
 
 ## Security reports
 
