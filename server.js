@@ -19,6 +19,9 @@ const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
 // the session cookie during Strava's cross-site return.
 const pendingOAuthStates = new Map();
 
+// Render terminates TLS before forwarding requests to this process. Trust that
+// single proxy so secure session cookies are issued to the browser correctly.
+app.set("trust proxy", 1);
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET || "change-me-before-production",
