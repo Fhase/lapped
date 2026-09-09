@@ -119,7 +119,7 @@ function formatFastestLap(efforts) {
   const remainder = String(seconds % 60).padStart(2, "0");
   const speedMs = Number(fastest.average_speed) || Number(fastest.distance) / seconds;
   const speedKmh = (speedMs * 3.6).toFixed(1);
-  return `${minutes}:${remainder} ${speedKmh} km/h`;
+  return `${minutes}:${remainder} · ${speedKmh} km/h`;
 }
 
 async function scanActivity(req, activityId) {
