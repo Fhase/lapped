@@ -18,6 +18,7 @@ const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
+const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -112,6 +113,49 @@ async function saveToken(token) {
     tag: cipher.getAuthTag().toString("base64"),
     ciphertext: ciphertext.toString("base64")
   }));
+}
+
+async function readLapStats() {
+  try {
+    const stored = JSON.parse(await fs.readFile(lapStatsStore, "utf8"));
+    if (!stored?.ciphertext) return stored;
+    if (!tokenEncryptionKey) throw new Error("TOKEN_ENCRYPTION_KEY is required to read encrypted lap stats.");
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      tokenEncryptionKey,
+      Buffer.from(stored.iv, "base64")
+    );
+    decipher.setAuthTag(Buffer.from(stored.tag, "base64"));
+    return JSON.parse(Buffer.concat([
+      decipher.update(Buffer.from(stored.ciphertext, "base64")),
+      decipher.final()
+    ]).toString("utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return {};
+    throw error;
+  }
+}
+
+async function saveLapStats(stats) {
+  await fs.mkdir(dataDir, { recursive: true });
+  if (!tokenEncryptionKey) return fs.writeFile(lapStatsStore, JSON.stringify(stats, null, 2));
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", tokenEncryptionKey, iv);
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(stats)), cipher.final()]);
+  await fs.writeFile(lapStatsStore, JSON.stringify({
+    v: 1,
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    ciphertext: ciphertext.toString("base64")
+  }));
+}
+
+async function clearLapStats(athleteId) {
+  if (!athleteId) return;
+  const stats = await readLapStats();
+  if (!stats[athleteId]) return;
+  delete stats[athleteId];
+  await saveLapStats(stats);
 }
 
 function escapeHtml(value) {
@@ -214,6 +258,53 @@ async function tokenForAthlete(athleteId) {
   return refreshed.access_token;
 }
 
+const lapStatsCacheMs = 24 * 60 * 60 * 1000;
+
+function stravaHeaders(token) {
+  return { headers: { Authorization: `Bearer ${token}` } };
+}
+
+async function countSegmentEfforts(token, start, end) {
+  const params = new URLSearchParams({
+    segment_id: segmentId,
+    start_date_local: start.toISOString(),
+    end_date_local: end.toISOString(),
+    per_page: "200"
+  });
+  const efforts = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
+  if (efforts.length < 200 || end - start <= 24 * 60 * 60 * 1000) return efforts.length;
+  const middle = new Date(start.getTime() + Math.floor((end - start) / 2));
+  const [firstHalf, secondHalf] = await Promise.all([
+    countSegmentEfforts(token, start, middle),
+    countSegmentEfforts(token, middle, end)
+  ]);
+  return firstHalf + secondHalf;
+}
+
+async function getLapStats(token, athleteId) {
+  const stats = await readLapStats();
+  const cached = stats[athleteId];
+  if (cached && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached.available ? cached : null;
+
+  try {
+    const segment = await strava(`/segments/${segmentId}`, stravaHeaders(token));
+    const lifetime = Number(segment.athlete_segment_stats?.effort_count);
+    if (!Number.isFinite(lifetime)) throw new Error("Strava returned 403: segment history unavailable");
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const ytd = await countSegmentEfforts(token, new Date(Date.UTC(year, 0, 1)), now);
+    const result = { available: true, lifetime, ytd, year, checkedAt: Date.now() };
+    stats[athleteId] = result;
+    await saveLapStats(stats);
+    return result;
+  } catch (error) {
+    if (!/Strava returned (?:401|403|404)/.test(error.message)) throw error;
+    stats[athleteId] = { available: false, checkedAt: Date.now() };
+    await saveLapStats(stats);
+    return null;
+  }
+}
+
 function isTargetEffort(effort) {
   return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
 }
@@ -237,9 +328,9 @@ function hasLappedReceipt(description) {
 
 async function scanActivity(req, activityId) {
   const token = await accessToken(req);
-  return scanActivityWithToken(token, activityId);
+  return scanActivityWithToken(token, activityId, req.session.strava.athlete?.id);
 }
-async function scanActivityWithToken(token, activityId) {
+async function scanActivityWithToken(token, activityId, athleteId) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
@@ -271,6 +362,7 @@ async function scanActivityWithToken(token, activityId) {
     headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify({ description })
   });
+  await clearLapStats(athleteId);
   return { lapCount, changed: true, description };
 }
 
@@ -316,6 +408,15 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), configured: !configError, segmentId: segmentId || null }));
+app.get("/api/lap-stats", async (req, res, next) => {
+  try {
+    if (!req.session.strava) return res.status(401).json({ available: false });
+    const token = await accessToken(req);
+    const athleteId = req.session.strava.athlete?.id;
+    const stats = await getLapStats(token, athleteId);
+    res.json(stats || { available: false });
+  } catch (error) { next(error); }
+});
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
 app.get("/admin", requireAdmin, (req, res) => {
   const athletes = Object.values(req.connectedTokens).map((token) => token.athlete || {});
@@ -337,7 +438,7 @@ app.post("/webhook", (req, res) => {
   const event = req.body;
   if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
   tokenForAthlete(event.owner_id)
-    .then((token) => scanActivityWithToken(token, event.object_id))
+    .then((token) => scanActivityWithToken(token, event.object_id, event.owner_id))
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
