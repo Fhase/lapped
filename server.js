@@ -540,6 +540,18 @@ async function runLeaderboardStep() {
   }
 }
 
+async function refreshLeaderboardLifetime(athleteId, tokens) {
+  if (!tokens[athleteId]) return null;
+  const board = await ensureLeaderboard(tokens);
+  const accessTokenValue = await tokenForAthlete(athleteId);
+  const segment = await strava(`/segments/${segmentId}`, stravaHeaders(accessTokenValue));
+  const entry = board.athletes[athleteId];
+  entry.allTime = { status: "ready", value: Number(segment.athlete_segment_stats?.effort_count) || 0, checkedAt: Date.now() };
+  board.athletes[athleteId] = entry;
+  await writeEncryptedStore(leaderboardStore, board);
+  return entry.allTime.value;
+}
+
 async function addCompletedActivityToLeaderboard(athleteId, activityId, result) {
   if (!result?.changed || !athleteId || !activityId) return;
   const board = await readEncryptedStore(leaderboardStore);
@@ -871,7 +883,12 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
       readEncryptedStore(featureRequestsStore),
       showRankings ? connectionRankings(req.connectedTokens) : Promise.resolve(null)
     ]);
-    const leaderboard = showLeaderboard ? await ensureLeaderboard(req.connectedTokens) : null;
+    let leaderboard = showLeaderboard ? await ensureLeaderboard(req.connectedTokens) : null;
+    const refreshAthleteId = String(req.query.refresh || "");
+    if (showLeaderboard && refreshAthleteId && req.connectedTokens[refreshAthleteId]) {
+      await refreshLeaderboardLifetime(refreshAthleteId, req.connectedTokens);
+      leaderboard = await readEncryptedStore(leaderboardStore);
+    }
     const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
     const extras = `${rankings ? rankingPanel(rankings) : ""}${leaderboard ? leaderboardPanel(leaderboard, req.connectedTokens) : ""}${ticketPanel(tickets)}`;
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
