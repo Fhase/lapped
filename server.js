@@ -487,6 +487,19 @@ function leaderboardName(token) {
   return [token.athlete?.firstname, token.athlete?.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
 }
 
+function freshYtdScan() {
+  const year = new Date().getUTCFullYear();
+  return {
+    algorithm: "date-ranges-v2",
+    year,
+    status: "loading",
+    value: null,
+    total: 0,
+    seen: [],
+    ranges: [{ start: new Date(Date.UTC(year, 0, 1)).toISOString(), end: new Date().toISOString() }]
+  };
+}
+
 async function ensureLeaderboard(tokens) {
   const board = await readEncryptedStore(leaderboardStore);
   board.athletes ||= {};
@@ -496,20 +509,18 @@ async function ensureLeaderboard(tokens) {
       board.athletes[athleteId] = {
         name: leaderboardName(token),
         allTime: { status: "loading", value: null },
-        ytd: { status: "loading", value: null, total: 0, seen: [], cursorEnd: null }
+        ytd: freshYtdScan()
       };
       changed = true;
     } else if (board.athletes[athleteId].name !== leaderboardName(token)) {
       board.athletes[athleteId].name = leaderboardName(token);
       changed = true;
     }
-    // Older versions attempted page-number pagination, but Strava's segment
-    // efforts endpoint does not accept a page parameter. Restart only an
-    // unfinished legacy scan so the stored date cursor can advance correctly.
-    if (board.athletes[athleteId].ytd?.status === "loading"
-      && board.athletes[athleteId].ytd?.page > 1
-      && !("cursorEnd" in board.athletes[athleteId].ytd)) {
-      board.athletes[athleteId].ytd = { status: "loading", value: null, total: 0, seen: [], cursorEnd: null };
+    // Date cursors are unsafe because Strava does not guarantee a chronological
+    // order for a 200-effort response. Rebuild old totals with bounded ranges.
+    if (board.athletes[athleteId].ytd?.algorithm !== "date-ranges-v2"
+      || board.athletes[athleteId].ytd?.year !== new Date().getUTCFullYear()) {
+      board.athletes[athleteId].ytd = freshYtdScan();
       changed = true;
     }
   }
@@ -546,24 +557,46 @@ async function runLeaderboardStep() {
       const segment = await strava(`/segments/${segmentId}`, stravaHeaders(accessTokenValue));
       entry.allTime = { status: "ready", value: Number(segment.athlete_segment_stats?.effort_count) || 0, checkedAt: Date.now() };
     } else {
-      const year = new Date().getUTCFullYear();
+      entry.ytd ||= freshYtdScan();
+      const range = entry.ytd.ranges?.shift();
+      if (!range) {
+        entry.ytd = {
+          algorithm: "date-ranges-v2",
+          year: new Date().getUTCFullYear(),
+          status: "ready",
+          value: Number(entry.ytd.total) || 0,
+          checkedAt: Date.now()
+        };
+        board.athletes[athleteId] = entry;
+        await writeEncryptedStore(leaderboardStore, board);
+        hasPendingWork = Object.entries(board.athletes || {}).some(([id, item]) => tokens[id]
+          && (item.allTime?.status !== "ready" || item.ytd?.status !== "ready"));
+        return;
+      }
       const params = new URLSearchParams({
         segment_id: segmentId,
-        start_date_local: new Date(Date.UTC(year, 0, 1)).toISOString(),
-        end_date_local: entry.ytd.cursorEnd || new Date().toISOString(),
+        start_date_local: range.start,
+        end_date_local: range.end,
         per_page: "200"
       });
       const batch = await strava(`/segment_efforts?${params}`, stravaHeaders(accessTokenValue));
       const seen = new Set(entry.ytd.seen || []);
-      for (const effort of batch) seen.add(String(effort.id));
+      if (batch.length >= 200) {
+        const start = Date.parse(range.start);
+        const end = Date.parse(range.end);
+        const midpoint = start + Math.floor((end - start) / 2);
+        if (!Number.isFinite(midpoint) || midpoint <= start || midpoint >= end) {
+          throw new Error("Could not subdivide a full segment-effort range.");
+        }
+        entry.ytd.ranges.unshift(
+          { start: new Date(midpoint + 1).toISOString(), end: range.end },
+          { start: range.start, end: new Date(midpoint).toISOString() }
+        );
+      } else {
+        for (const effort of batch) seen.add(String(effort.id));
+      }
       entry.ytd.total = seen.size;
       entry.ytd.seen = [...seen];
-      if (batch.length < 200) entry.ytd = { status: "ready", value: seen.size, checkedAt: Date.now() };
-      else {
-        const oldestTimestamp = Math.min(...batch.map((effort) => Date.parse(effort.start_date_local)).filter(Number.isFinite));
-        if (!Number.isFinite(oldestTimestamp)) throw new Error("Strava returned segment efforts without dates.");
-        entry.ytd.cursorEnd = new Date(oldestTimestamp - 1).toISOString();
-      }
     }
     board.athletes[athleteId] = entry;
     await writeEncryptedStore(leaderboardStore, board);
