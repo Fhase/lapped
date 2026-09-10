@@ -912,6 +912,24 @@ app.get("/admin/rankings", requireAdmin, async (req, res, next) => {
     });
   } catch (error) { next(error); }
 });
+app.post("/admin/athletes/:athleteId/disconnect", requireAdmin, async (req, res, next) => {
+  try {
+    const athleteId = String(req.params.athleteId || "");
+    if (!/^\d+$/.test(athleteId)) return res.status(400).json({ error: "Invalid athlete ID." });
+    const token = req.connectedTokens[athleteId];
+    if (!token) return res.sendStatus(404);
+    // This endpoint is deliberately admin-only: it is for correcting an
+    // accidentally linked athlete, never an automatic connection cleanup.
+    await removeConnectedAthlete(athleteId);
+    if (token.access_token) {
+      await fetch("https://www.strava.com/oauth/deauthorize", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token.access_token}` }
+      }).catch(() => {});
+    }
+    res.json({ ok: true, athleteId });
+  } catch (error) { next(error); }
+});
 app.post("/admin/tickets/:id", requireAdmin, async (req, res, next) => {
   try {
     const action = String(req.body?.action || "");
