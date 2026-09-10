@@ -1,6 +1,6 @@
 # Security Policy
 
-Lapped stores Strava authorization tokens encrypted at rest and keeps deployment credentials out of version control. The project uses HTTPS in production, secure/HttpOnly cookies, signed owner-dashboard access, webhook verification, narrowly scoped Strava API permissions, and seven-day expiry for activity-processing records.
+Lapped stores Strava authorization tokens encrypted at rest and keeps deployment credentials out of version control. The project uses HTTPS in production, secure/HttpOnly cookies, signed owner-dashboard access, webhook verification, and narrowly scoped Strava API permissions.
 
 ## Reporting a vulnerability
 

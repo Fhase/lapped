@@ -24,9 +24,7 @@ The included Chrome extension is optional. It lets a rider manually rescan an ex
 - Connected-athlete tokens are stored on the service's persistent disk encrypted with AES-256-GCM. The encryption key and all Strava credentials live only in environment variables, never in this repository.
 - `data/`, `.env`, deployment keys, and dependency folders are excluded from Git.
 - The owner dashboard is protected by Strava authentication, an owner-only athlete check, and a signed, HttpOnly, secure cookie. It is not a hidden public page.
-- Riders explicitly agree to the data-use notice before authorizing, and can disconnect from Lapped at any time. Disconnecting revokes Lapped access and deletes that rider's Lapped authorization and operational records.
-- Lapped is a private per-athlete utility. It does not publish cross-athlete leaderboards, profiles, or activity history.
-- Short-lived activity processing records are retained for no more than seven days. See the live [privacy notice](https://lapped.fit/privacy.html) for data-use, access, and deletion details.
+- Riders can revoke access at any time from their Strava account settings.
 
 No web service can honestly promise to be unhackable. Keep the deployment platform and GitHub account protected with strong, unique passwords and two-factor authentication; rotate credentials promptly if there is any concern they were exposed.
 
