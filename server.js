@@ -391,9 +391,19 @@ function leaderboardPanel(board, tokens) {
   const rows = (key) => entries.filter((entry) => entry[key]?.status === "ready")
     .sort((a, b) => b[key].value - a[key].value)
     .map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${entry[key].value}</td></tr>`).join("");
+  // A historical YTD scan can span several pages. Show the collected total
+  // immediately (with a +) rather than leaving the whole table blank until
+  // that athlete's final page has been read.
+  const ytdRows = entries.filter((entry) => entry.ytd?.status === "ready" || Number(entry.ytd?.total) > 0)
+    .sort((a, b) => (b.ytd.value ?? b.ytd.total ?? 0) - (a.ytd.value ?? a.ytd.total ?? 0))
+    .map((entry, index) => {
+      const complete = entry.ytd.status === "ready";
+      const value = complete ? entry.ytd.value : entry.ytd.total;
+      return `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${value}${complete ? "" : "+"}</td></tr>`;
+    }).join("");
   const loading = entries.filter((entry) => entry.allTime?.status !== "ready" || entry.ytd?.status !== "ready").length;
   const empty = '<tr><td colspan="3">loading stats… come back in a while</td></tr>';
-  return `<style>.leaderboard{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.leaderboard h2{font-size:15px;margin:0 0 6px;font-weight:500}.leaderboard p{color:var(--muted);font-size:12px;margin:0 0 18px}.leaderboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px}.leaderboard td:first-child{color:var(--muted);width:30px}.leaderboard td:last-child{color:var(--ink)}@media(max-width:600px){.leaderboard-grid{grid-template-columns:1fr;gap:32px}}</style><section class="leaderboard"><h2>High Park leaderboard</h2><p>${loading ? `loading stats for ${loading} athlete${loading === 1 ? "" : "s"}… come back in a while` : "up to date"}</p><div class="leaderboard-grid"><div><h2>All time</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("allTime") || empty}</tbody></table></div><div><h2>${new Date().getUTCFullYear()}</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("ytd") || empty}</tbody></table></div></div></section>`;
+  return `<style>.leaderboard{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.leaderboard h2{font-size:15px;margin:0 0 6px;font-weight:500}.leaderboard p{color:var(--muted);font-size:12px;margin:0 0 18px}.leaderboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px}.leaderboard td:first-child{color:var(--muted);width:30px}.leaderboard td:last-child{color:var(--ink)}@media(max-width:600px){.leaderboard-grid{grid-template-columns:1fr;gap:32px}}</style><section class="leaderboard"><h2>High Park leaderboard</h2><p>${loading ? `loading stats for ${loading} athlete${loading === 1 ? "" : "s"}… come back in a while` : "up to date"}</p><div class="leaderboard-grid"><div><h2>All time</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("allTime") || empty}</tbody></table></div><div><h2>${new Date().getUTCFullYear()}</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${ytdRows || empty}</tbody></table></div></div></section>`;
 }
 
 function adminPage(tokens, analytics, { page, query }) {
