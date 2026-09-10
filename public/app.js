@@ -10,12 +10,10 @@ function setTheme(theme) {
   themeToggle.checked = theme === "light";
   themeLabel.textContent = `${theme} mode`;
 }
-const savedTheme = localStorage.getItem("lapped-theme");
-setTheme(savedTheme === "dark" ? "dark" : "light");
+setTheme("light");
 themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);
-  localStorage.setItem("lapped-theme", theme);
 };
 fetch("/api/status").then((r) => r.json()).then((data) => {
   if (!data.configured) { connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
