@@ -45,8 +45,8 @@ const featureRequestSubmissions = new Map();
 // import is not missed, without doubling scans for title edits or every webhook.
 const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
-// Rankings are shared publicly, so keep the aggregate cache long-lived rather
-// than letting every visitor create another set of Strava reads.
+// Historical and cross-athlete rankings are disabled. Strava's current API
+// policy permits activity data only for the athlete who authorized Lapped.
 const rankingCacheMs = 24 * 60 * 60 * 1000;
 let connectionRankingCache = null;
 const leaderboardStepMs = 5 * 60 * 1000;
@@ -203,6 +203,15 @@ async function writeEncryptedStore(storePath, value) {
   }));
 }
 
+async function purgeLegacyDerivedStores() {
+  // These old caches contained cross-athlete and historical derived stats.
+  // They are no longer part of Lapped's per-athlete lap-receipt service.
+  await Promise.all([
+    fs.rm(leaderboardStore, { force: true }),
+    fs.rm(lapStatsStore, { force: true })
+  ]);
+}
+
 async function saveToken(token) {
   if (!token.athlete?.id) return;
   const tokens = await readTokens();
@@ -241,6 +250,12 @@ async function removeConnectedAthlete(athleteId) {
   delete tokens[athleteId];
   await writeEncryptedStore(tokenStore, tokens);
   await clearLapStats(athleteId);
+  // Remove any legacy derived record too. This does not touch other athletes.
+  const board = await readEncryptedStore(leaderboardStore);
+  if (board.athletes?.[athleteId]) {
+    delete board.athletes[athleteId];
+    await writeEncryptedStore(leaderboardStore, board);
+  }
 }
 
 async function athleteIsStillConnected(athleteId) {
@@ -273,6 +288,10 @@ async function markActivityProcessed(athleteId, activityId) {
   stats.__processed ||= {};
   stats.__processed[athleteId] ||= {};
   stats.__processed[athleteId][activityId] = Date.now();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  for (const [id, processedAt] of Object.entries(stats.__processed[athleteId])) {
+    if (Number(processedAt) < cutoff) delete stats.__processed[athleteId][id];
+  }
   await writeEncryptedStore(lapStatsStore, stats);
 }
 
@@ -888,8 +907,14 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
   return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
 
+app.post("/auth/consent", (req, res) => {
+  req.session.lappedDataConsentAt = new Date().toISOString();
+  res.redirect("/auth/strava");
+});
+
 app.get("/auth/strava", (req, res) => {
   if (configError) return res.status(503).send(`Missing configuration: ${configError}`);
+  if (!req.session.lappedDataConsentAt) return res.status(403).send("Please review and accept Lapped's data use before connecting Strava.");
   if (cookieValue(req, "lapped_analytics_opt_out") !== "1") recordAnalyticsEvent(visitorIdFor(req, res), "connect").catch((error) => console.error("Analytics connect failed:", error.message));
   const now = Date.now();
   const ip = req.ip || "unknown";
@@ -942,51 +967,16 @@ app.post("/api/feature-requests", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
-app.get("/leaderboard", async (_req, res, next) => {
-  try {
-    const tokens = await readTokens();
-    const [board, rankings] = await Promise.all([
-      ensureLeaderboard(tokens),
-      connectionRankings(tokens)
-    ]);
-    res.type("html").send(publicLeaderboardPage(board, tokens, rankings));
-  } catch (error) { next(error); }
-});
+app.get("/leaderboard", (_req, res) => res.redirect(302, "/privacy.html#data-use"));
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
-    if (req.query.view === "leaderboard" && req.query.refresh) {
-      const athleteId = String(req.query.refresh);
-      if (req.connectedTokens[athleteId]) await refreshLeaderboardLifetime(athleteId, req.connectedTokens);
-      return res.redirect("/leaderboard");
-    }
-    if (req.query.view === "laps" || req.query.view === "leaderboard") return res.redirect("/leaderboard");
-    const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
-    const query = String(req.query.q || "").slice(0, 80);
     const [analytics, tickets] = await Promise.all([
       readEncryptedStore(analyticsStore),
       readEncryptedStore(featureRequestsStore)
     ]);
-    const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
+    const pageHtml = adminPage({}, analytics, { page: 1, query: "" });
     const extras = ticketPanel(tickets);
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
-  } catch (error) { next(error); }
-});
-app.get("/admin/athletes", requireAdmin, (req, res) => {
-  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
-  const query = String(req.query.q || "").slice(0, 80);
-  res.json(connectedAthletePage(req.connectedTokens, page, query));
-});
-app.get("/admin/rankings", requireAdmin, async (req, res, next) => {
-  try {
-    const rankings = await connectionRankings(req.connectedTokens);
-    res.json({
-      updatedAt: new Date().toISOString(),
-      mostLaps: [...rankings].filter((entry) => !entry.unavailable).sort((a, b) => b.laps - a.laps),
-      fastestLap: [...rankings].filter((entry) => !entry.unavailable && entry.fastest).sort((a, b) => {
-        const seconds = (value) => value.split(":").reduce((total, part) => total * 60 + Number(part), 0);
-        return seconds(a.fastest) - seconds(b.fastest);
-      })
-    });
   } catch (error) { next(error); }
 });
 app.get("/admin/athletes/:athleteId/disconnect", requireAdmin, (req, res) => {
@@ -1065,13 +1055,12 @@ app.post("/webhook", (req, res) => {
   if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
   tokenForAthlete(event.owner_id)
     .then(async (token) => {
-      const result = await scanActivityWithToken(token, event.object_id, event.owner_id, { retryIfProcessing: event.aspect_type === "create" });
-      await addCompletedActivityToLeaderboard(event.owner_id, event.object_id, result);
+      await scanActivityWithToken(token, event.object_id, event.owner_id, { retryIfProcessing: event.aspect_type === "create" });
     })
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
 app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER_EXTERNAL_URL ? "0.0.0.0" : "127.0.0.1"), () => {
   console.log(`Lapped running at ${baseUrl}`);
-  scheduleLeaderboardStep();
+  purgeLegacyDerivedStores().catch((error) => console.error("Legacy cache cleanup failed:", error.message));
 });

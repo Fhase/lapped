@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lapped — Privacy</title>
+  <meta name="description" content="How Lapped uses and protects Strava data." />
+  <link rel="canonical" href="https://lapped.fit/privacy.html" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>.policy{max-width:700px;padding:98px 0 42px}.policy h1{font-size:clamp(58px,10vw,100px);margin-bottom:48px}.policy section{border-top:1px solid var(--ink);padding:22px 0 28px}.policy h2{font-family:Manrope,Arial,sans-serif;font-size:19px;line-height:1.1;letter-spacing:-.04em}.policy p{max-width:650px;color:var(--muted);font-size:15px;line-height:1.55}.policy strong,.policy a{color:var(--ink)}.policy a{text-underline-offset:3px}.policy footer{color:var(--muted);font-size:12px;margin-top:42px}</style>
+</head>
+<body>
+  <main>
+    <nav><a class="wordmark" href="/">Lapped</a><div class="nav-right"><a class="github-link" href="/">Home</a><a class="github-link" href="https://github.com/Fhase/lapped" target="_blank" rel="noreferrer">GitHub</a></div></nav>
+    <article class="policy">
+      <h1>Privacy.</h1>
+      <section id="data-use"><h2>What Lapped does</h2><p>Lapped is a personal High Park lap counter. After you choose to connect, it reads your Strava activity information and segment efforts to detect completed High Park laps, then writes the lap receipt to <strong>your own</strong> Strava activity description. It does not alter activities without a completed matching lap.</p></section>
+      <section><h2>Data Lapped uses</h2><p>To provide this, Lapped uses the Strava profile information returned during authorization (including your athlete ID and display name), authorization tokens, and the activity/segment-effort information needed for an activity being processed. Lapped uses Strava OAuth and Strava activity webhooks to receive and process this information.</p><p>Lapped does not sell Strava data, use it for advertising, create a public athlete directory, or show one athlete’s Strava data to another athlete. Lapped is <strong>compatible with Strava</strong>.</p></section>
+      <section><h2>Retention and security</h2><p>Authorization tokens are encrypted at rest. Short-lived records used to prevent duplicate activity updates are automatically removed after seven days. Lapped does not retain a historical archive of your activity or segment-effort data.</p></section>
+      <section><h2>Your choices</h2><p>You can disconnect at any time from Lapped. Disconnecting revokes Lapped’s Strava access and deletes your Lapped authorization and stored operational records for that account. You can also manage connected apps in your <a href="https://www.strava.com/settings/apps" target="_blank" rel="noreferrer">Strava settings</a>. For a data-access, correction, deletion, or privacy request, use the <a href="/#request-title">request form on the Lapped home page</a> and begin your message with “privacy:”. We will confirm completed deletion requests in writing through that channel.</p></section>
+      <section><h2>Updates</h2><p>If this policy changes materially, this page will be updated before the change takes effect. Lapped is an independent project and is not affiliated with Strava.</p></section>
+      <footer>Last updated September 10, 2026 · Lapped</footer>
+    </article>
+  </main>
+</body>
+</html>
