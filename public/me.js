@@ -3,7 +3,7 @@ function setTheme(theme) { document.documentElement.dataset.theme = theme; theme
 setTheme("light");
 themeToggle.onchange = () => setTheme(themeToggle.checked ? "light" : "dark");
 
-const name = document.querySelector("#name"), stats = document.querySelector("#stats"), lifetime = document.querySelector("#lifetime"), lifetimeKm = document.querySelector("#lifetime-km"), ytd = document.querySelector("#ytd"), ytdKm = document.querySelector("#ytd-km"), ytdLabel = document.querySelector("#ytd-label"), sinceJoining = document.querySelector("#since-joining"), sinceJoiningKm = document.querySelector("#since-joining-km"), fastest = document.querySelector("#fastest"), action = document.querySelector("#ytd-action"), loadYtd = document.querySelector("#load-ytd"), status = document.querySelector("#status"), error = document.querySelector("#error");
+const name = document.querySelector("#name"), stats = document.querySelector("#stats"), lifetime = document.querySelector("#lifetime"), lifetimeKm = document.querySelector("#lifetime-km"), ytd = document.querySelector("#ytd"), ytdKm = document.querySelector("#ytd-km"), ytdLabel = document.querySelector("#ytd-label"), sinceJoining = document.querySelector("#since-joining"), sinceJoiningKm = document.querySelector("#since-joining-km"), fastest = document.querySelector("#fastest"), fastestSpeed = document.querySelector("#fastest-speed"), action = document.querySelector("#ytd-action"), loadYtd = document.querySelector("#load-ytd"), status = document.querySelector("#status"), error = document.querySelector("#error");
 const kilometres = (laps) => Number.isFinite(Number(laps)) ? `${Math.round(Number(laps) * 1.85).toLocaleString()} km` : "— km";
 async function load(includeYtd = false) {
   error.textContent = "";
@@ -22,7 +22,9 @@ async function load(includeYtd = false) {
     ytdLabel.textContent = `${data.year} laps`;
     sinceJoining.textContent = data.sinceJoining ?? "—";
     sinceJoiningKm.textContent = kilometres(data.sinceJoining);
-    fastest.textContent = data.fastestSinceJoining || "—";
+    const [fastestTime, speed] = String(data.fastestSinceJoining || "—").split(" · ");
+    fastest.textContent = fastestTime;
+    fastestSpeed.textContent = speed || "—";
     stats.hidden = false;
     action.hidden = false;
     if (data.ytdReady) { ytd.textContent = data.ytd ?? "—"; ytdKm.textContent = kilometres(data.ytd); loadYtd.hidden = true; status.textContent = ""; }
