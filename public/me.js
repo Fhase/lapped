@@ -11,7 +11,10 @@ async function load(includeYtd = false) {
   try {
     const response = await fetch(`/api/me/stats${includeYtd ? "?ytd=1" : ""}`);
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not load your laps.");
+    if (!response.ok) {
+      if (response.status === 401) return;
+      throw new Error(data.error || "Could not load your laps.");
+    }
     const athleteName = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(" ");
     name.textContent = athleteName ? `${athleteName}’s laps.` : "My laps.";
     lifetime.textContent = data.lifetime ?? "—";

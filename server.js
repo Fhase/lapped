@@ -20,6 +20,7 @@ const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
 const lapStatsEnabled = false;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
+const sessionStore = path.join(dataDir, "sessions.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
 const featureRequestsStore = path.join(dataDir, "feature-requests.json");
@@ -28,6 +29,50 @@ const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
 const sessionSecret = process.env.SESSION_SECRET || "change-me-before-production";
+class EncryptedSessionStore extends session.Store {
+  get(sid, callback) {
+    readEncryptedStore(sessionStore).then(async (sessions) => {
+      const stored = sessions[sid];
+      const expiresAt = new Date(stored?.cookie?.expires || 0).getTime();
+      if (!stored || (Number.isFinite(expiresAt) && expiresAt < Date.now())) {
+        if (stored) { delete sessions[sid]; await writeEncryptedStore(sessionStore, sessions); }
+        return callback(null, null);
+      }
+      callback(null, stored);
+    }).catch(callback);
+  }
+  set(sid, value, callback) {
+    readEncryptedStore(sessionStore).then(async (sessions) => {
+      sessions[sid] = value;
+      const now = Date.now();
+      for (const [id, stored] of Object.entries(sessions)) {
+        const expiresAt = new Date(stored?.cookie?.expires || 0).getTime();
+        if (Number.isFinite(expiresAt) && expiresAt < now) delete sessions[id];
+      }
+      await writeEncryptedStore(sessionStore, sessions);
+      callback?.(null);
+    }).catch((error) => callback?.(error));
+  }
+  destroy(sid, callback) {
+    readEncryptedStore(sessionStore).then(async (sessions) => {
+      delete sessions[sid];
+      await writeEncryptedStore(sessionStore, sessions);
+      callback?.(null);
+    }).catch((error) => callback?.(error));
+  }
+  async destroyAthleteSessions(athleteId) {
+    const sessions = await readEncryptedStore(sessionStore);
+    let changed = false;
+    for (const [sid, stored] of Object.entries(sessions)) {
+      if (String(stored?.strava?.athlete?.id || "") === String(athleteId)) {
+        delete sessions[sid];
+        changed = true;
+      }
+    }
+    if (changed) await writeEncryptedStore(sessionStore, sessions);
+  }
+}
+const encryptedSessionStore = new EncryptedSessionStore();
 // A short-lived server-side record keeps OAuth safe if a privacy extension strips
 // the session cookie during Strava's cross-site return.
 const pendingOAuthStates = new Map();
@@ -71,6 +116,7 @@ app.use((_req, res, next) => {
 app.use(express.json());
 app.use(session({
   name: "lapped_session",
+  store: encryptedSessionStore,
   secret: sessionSecret,
   resave: false,
   saveUninitialized: false,
@@ -249,6 +295,7 @@ async function removeConnectedAthlete(athleteId) {
   const tokens = await readTokens();
   delete tokens[athleteId];
   await writeEncryptedStore(tokenStore, tokens);
+  await encryptedSessionStore.destroyAthleteSessions(athleteId);
   await clearLapStats(athleteId);
   // Remove any legacy derived record too. This does not touch other athletes.
   const board = await readEncryptedStore(leaderboardStore);
