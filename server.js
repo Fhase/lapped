@@ -33,7 +33,8 @@ class EncryptedSessionStore extends session.Store {
   get(sid, callback) {
     readEncryptedStore(sessionStore).then(async (sessions) => {
       const stored = sessions[sid];
-      const expiresAt = new Date(stored?.cookie?.expires || 0).getTime();
+      const cookieExpiry = stored?.cookie?.expires;
+      const expiresAt = cookieExpiry ? new Date(cookieExpiry).getTime() : NaN;
       if (!stored || (Number.isFinite(expiresAt) && expiresAt < Date.now())) {
         if (stored) { delete sessions[sid]; await writeEncryptedStore(sessionStore, sessions); }
         return callback(null, null);
@@ -46,7 +47,8 @@ class EncryptedSessionStore extends session.Store {
       sessions[sid] = value;
       const now = Date.now();
       for (const [id, stored] of Object.entries(sessions)) {
-        const expiresAt = new Date(stored?.cookie?.expires || 0).getTime();
+        const cookieExpiry = stored?.cookie?.expires;
+        const expiresAt = cookieExpiry ? new Date(cookieExpiry).getTime() : NaN;
         if (Number.isFinite(expiresAt) && expiresAt < now) delete sessions[id];
       }
       await writeEncryptedStore(sessionStore, sessions);
