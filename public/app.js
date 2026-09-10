@@ -24,6 +24,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectedOverview.hidden = false;
   descriptionExample.hidden = true;
   lapLink.innerHTML = "see laps <span>↓</span>";
+  lapLink.href = "/me";
   connectForm.hidden = true;
   disconnect.hidden = false;
 }).catch(() => { connect.textContent = "Server unavailable"; connect.disabled = true; });

@@ -799,6 +799,21 @@ async function getLapStats(token, athleteId, { includeYtd = false } = {}) {
   }
 }
 
+async function getConnectionLapStats(token, athleteId, joinedAt) {
+  const stats = await readLapStats();
+  const cached = stats[athleteId]?.connection;
+  if (cached?.checkedAt && Date.now() - cached.checkedAt < lapStatsCacheMs) return cached;
+  const efforts = await segmentEffortsSince(token, joinedAt || new Date().toISOString());
+  const result = {
+    laps: efforts.length,
+    fastest: formatFastestLap(efforts),
+    checkedAt: Date.now()
+  };
+  stats[athleteId] = { ...(stats[athleteId] || {}), connection: result };
+  await writeEncryptedStore(lapStatsStore, stats);
+  return result;
+}
+
 function isTargetEffort(effort) {
   return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
 }
@@ -957,6 +972,26 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.get("/api/me/stats", async (req, res, next) => {
+  try {
+    const athleteId = req.session.strava?.athlete?.id;
+    if (!athleteId) return res.status(401).json({ error: "Connect Strava to view your laps." });
+    const token = await accessToken(req);
+    const stats = await getLapStats(token, athleteId, { includeYtd: req.query.ytd === "1" });
+    const storedToken = (await readTokens())[athleteId];
+    const connection = await getConnectionLapStats(token, athleteId, storedToken?.connected_at);
+    res.json({
+      athlete: req.session.strava.athlete,
+      lifetime: stats?.lifetime ?? null,
+      ytd: stats?.ytd ?? null,
+      year: stats?.year ?? new Date().getUTCFullYear(),
+      ytdReady: Boolean(stats?.hasYtd),
+      retryAt: stats?.rateLimited ? stats.retryAt : null,
+      sinceJoining: connection.laps,
+      fastestSinceJoining: connection.fastest
+    });
+  } catch (error) { next(error); }
+});
 app.post("/api/feature-requests", async (req, res, next) => {
   try {
     const text = String(req.body?.request || "").trim().replace(/\s+/g, " ");
@@ -967,6 +1002,7 @@ app.post("/api/feature-requests", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
+app.get("/me", (_req, res) => res.redirect(302, "/me.html"));
 app.get("/leaderboard", (_req, res) => res.redirect(302, "/privacy.html#data-use"));
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
