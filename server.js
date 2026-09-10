@@ -49,9 +49,8 @@ const processingRetries = new Map();
 // than letting every visitor create another set of Strava reads.
 const rankingCacheMs = 24 * 60 * 60 * 1000;
 let connectionRankingCache = null;
-// One serial historical read every 2.5 minutes: faster progress without
-// competing aggressively with the activity-description webhook traffic.
-const leaderboardStepMs = 2.5 * 60 * 1000;
+const leaderboardStepMs = 5 * 60 * 1000;
+const leaderboardBackfillStepMs = 90 * 1000;
 let leaderboardTimer = null;
 let leaderboardBusy = false;
 
@@ -513,11 +512,11 @@ async function ensureLeaderboard(tokens) {
     }
   }
   if (changed) await writeEncryptedStore(leaderboardStore, board);
-  scheduleLeaderboardStep(1000);
+  scheduleLeaderboardStep(leaderboardBackfillStepMs);
   return board;
 }
 
-function scheduleLeaderboardStep(delay = leaderboardStepMs) {
+function scheduleLeaderboardStep(delay = leaderboardBackfillStepMs) {
   if (leaderboardTimer) return;
   leaderboardTimer = setTimeout(() => {
     leaderboardTimer = null;
@@ -529,12 +528,16 @@ function scheduleLeaderboardStep(delay = leaderboardStepMs) {
 async function runLeaderboardStep() {
   if (leaderboardBusy) return;
   leaderboardBusy = true;
+  let hasPendingWork = true;
   try {
     const [board, tokens] = await Promise.all([readEncryptedStore(leaderboardStore), readTokens()]);
     const entries = Object.entries(board.athletes || {}).filter(([athleteId]) => tokens[athleteId]);
     const next = entries.find(([, entry]) => entry.allTime?.status === "loading")
       || entries.find(([, entry]) => entry.ytd?.status === "loading");
-    if (!next) return;
+    if (!next) {
+      hasPendingWork = false;
+      return;
+    }
     const [athleteId, entry] = next;
     const accessTokenValue = await tokenForAthlete(athleteId);
     if (entry.allTime?.status === "loading") {
@@ -562,11 +565,13 @@ async function runLeaderboardStep() {
     }
     board.athletes[athleteId] = entry;
     await writeEncryptedStore(leaderboardStore, board);
+    hasPendingWork = Object.entries(board.athletes || {}).some(([id, item]) => tokens[id]
+      && (item.allTime?.status !== "ready" || item.ytd?.status !== "ready"));
   } catch (error) {
     console.error("Slow leaderboard read failed:", error.message);
   } finally {
     leaderboardBusy = false;
-    scheduleLeaderboardStep();
+    scheduleLeaderboardStep(hasPendingWork ? leaderboardBackfillStepMs : leaderboardStepMs);
   }
 }
 
