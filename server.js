@@ -489,11 +489,20 @@ async function ensureLeaderboard(tokens) {
       board.athletes[athleteId] = {
         name: leaderboardName(token),
         allTime: { status: "loading", value: null },
-        ytd: { status: "loading", value: null, page: 1, total: 0, seen: [] }
+        ytd: { status: "loading", value: null, total: 0, seen: [], cursorEnd: null }
       };
       changed = true;
     } else if (board.athletes[athleteId].name !== leaderboardName(token)) {
       board.athletes[athleteId].name = leaderboardName(token);
+      changed = true;
+    }
+    // Older versions attempted page-number pagination, but Strava's segment
+    // efforts endpoint does not accept a page parameter. Restart only an
+    // unfinished legacy scan so the stored date cursor can advance correctly.
+    if (board.athletes[athleteId].ytd?.status === "loading"
+      && board.athletes[athleteId].ytd?.page > 1
+      && !("cursorEnd" in board.athletes[athleteId].ytd)) {
+      board.athletes[athleteId].ytd = { status: "loading", value: null, total: 0, seen: [], cursorEnd: null };
       changed = true;
     }
   }
@@ -530,8 +539,7 @@ async function runLeaderboardStep() {
       const params = new URLSearchParams({
         segment_id: segmentId,
         start_date_local: new Date(Date.UTC(year, 0, 1)).toISOString(),
-        end_date_local: new Date().toISOString(),
-        page: String(entry.ytd.page || 1),
+        end_date_local: entry.ytd.cursorEnd || new Date().toISOString(),
         per_page: "200"
       });
       const batch = await strava(`/segment_efforts?${params}`, stravaHeaders(accessTokenValue));
@@ -540,7 +548,11 @@ async function runLeaderboardStep() {
       entry.ytd.total = seen.size;
       entry.ytd.seen = [...seen];
       if (batch.length < 200) entry.ytd = { status: "ready", value: seen.size, checkedAt: Date.now() };
-      else entry.ytd.page = (entry.ytd.page || 1) + 1;
+      else {
+        const oldestTimestamp = Math.min(...batch.map((effort) => Date.parse(effort.start_date_local)).filter(Number.isFinite));
+        if (!Number.isFinite(oldestTimestamp)) throw new Error("Strava returned segment efforts without dates.");
+        entry.ytd.cursorEnd = new Date(oldestTimestamp - 1).toISOString();
+      }
     }
     board.athletes[athleteId] = entry;
     await writeEncryptedStore(leaderboardStore, board);
