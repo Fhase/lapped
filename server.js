@@ -310,7 +310,11 @@ function setAdminCookie(res, athleteId) {
 function formatJoinedAt(value) {
   if (!value) return "before tracking";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "before tracking" : new Intl.DateTimeFormat("en-CA", { dateStyle: "medium" }).format(date);
+  return Number.isNaN(date.getTime()) ? "before tracking" : new Intl.DateTimeFormat("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Toronto"
+  }).format(date);
 }
 
 function trafficSeries(analytics, range) {
