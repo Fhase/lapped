@@ -1,6 +1,6 @@
 import "./description-format.js";
 
-const connect = document.querySelector("#connect"), connectForm = document.querySelector("#connect-form"), disconnect = document.querySelector("#disconnect");
+const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
@@ -16,7 +16,7 @@ themeToggle.onchange = () => {
   setTheme(theme);
 };
 fetch("/api/status").then((r) => r.json()).then((data) => {
-  if (!data.configured) { connect.textContent = "Configure .env first"; connect.disabled = true; return; }
+  if (!data.configured) { connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
   if (!data.connected) return;
   const name = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(" ");
   athleteName.textContent = name || "Your laps";
@@ -24,10 +24,9 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectedOverview.hidden = false;
   descriptionExample.hidden = true;
   lapLink.innerHTML = "see laps <span>↓</span>";
-  lapLink.href = "/me";
-  connectForm.hidden = true;
+  connect.hidden = true;
   disconnect.hidden = false;
-}).catch(() => { connect.textContent = "Server unavailable"; connect.disabled = true; });
+}).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => {
   disconnect.disabled = true;
   try { await fetch("/auth/disconnect", { method: "POST" }); } finally { location.reload(); }
