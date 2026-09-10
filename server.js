@@ -949,7 +949,7 @@ app.get("/leaderboard", async (_req, res, next) => {
       ensureLeaderboard(tokens),
       connectionRankings(tokens)
     ]);
-    res.type("html").send(publicLeaderboardPage(board, tokens, rankings));
+    res.type("html").send(publicLeaderboardPage(board, tokens, rankings).replace("</head>", '<link rel="stylesheet" href="/leaderboard-refinements.css"></head>'));
   } catch (error) { next(error); }
 });
 app.get("/admin", requireAdmin, async (req, res, next) => {
