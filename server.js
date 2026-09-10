@@ -44,6 +44,8 @@ const featureRequestSubmissions = new Map();
 // import is not missed, without doubling scans for title edits or every webhook.
 const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
+const rankingCacheMs = 15 * 60 * 1000;
+let connectionRankingCache = null;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -437,6 +439,66 @@ async function tokenForAthlete(athleteId) {
   return refreshed.access_token;
 }
 
+function formatElapsedTime(seconds) {
+  const rounded = Math.round(Number(seconds));
+  if (!Number.isFinite(rounded) || rounded < 1) return null;
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
+}
+
+async function segmentEffortsSince(token, joinedAt) {
+  const efforts = [];
+  // A connection that has existed less than a day will normally fit in one
+  // page. The cap prevents an admin report from exhausting Strava's API quota.
+  for (let page = 1; page <= 5; page += 1) {
+    const params = new URLSearchParams({
+      segment_id: segmentId,
+      start_date_local: new Date(joinedAt).toISOString(),
+      end_date_local: new Date().toISOString(),
+      page: String(page),
+      per_page: "200"
+    });
+    const batch = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
+    efforts.push(...batch);
+    if (batch.length < 200) break;
+  }
+  return efforts;
+}
+
+function rankingFingerprint(tokens) {
+  return Object.entries(tokens)
+    .map(([athleteId, token]) => `${athleteId}:${token.connected_at || ""}`)
+    .sort()
+    .join("|");
+}
+
+async function connectionRankings(tokens) {
+  const fingerprint = rankingFingerprint(tokens);
+  if (connectionRankingCache
+    && connectionRankingCache.fingerprint === fingerprint
+    && Date.now() - connectionRankingCache.checkedAt < rankingCacheMs) {
+    return connectionRankingCache.rankings;
+  }
+
+  const rankings = await Promise.all(Object.entries(tokens).map(async ([athleteId, token]) => {
+    const name = [token.athlete?.firstname, token.athlete?.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
+    if (!token.connected_at) return { athleteId, name, laps: null, fastest: null, unavailable: true };
+    try {
+      const efforts = await segmentEffortsSince(await tokenForAthlete(athleteId), token.connected_at);
+      const fastest = efforts
+        .map((effort) => Number(effort.elapsed_time))
+        .filter((seconds) => Number.isFinite(seconds) && seconds > 0)
+        .sort((a, b) => a - b)[0];
+      return { athleteId, name, laps: efforts.length, fastest: formatElapsedTime(fastest), unavailable: false };
+    } catch (error) {
+      console.error(`Ranking read failed for athlete ${athleteId}:`, error.message);
+      return { athleteId, name, laps: null, fastest: null, unavailable: true };
+    }
+  }));
+
+  connectionRankingCache = { fingerprint, checkedAt: Date.now(), rankings };
+  return rankings;
+}
+
 const lapStatsCacheMs = 24 * 60 * 60 * 1000;
 
 function stravaHeaders(token) {
@@ -695,6 +757,19 @@ app.get("/admin/athletes", requireAdmin, (req, res) => {
   const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
   const query = String(req.query.q || "").slice(0, 80);
   res.json(connectedAthletePage(req.connectedTokens, page, query));
+});
+app.get("/admin/rankings", requireAdmin, async (req, res, next) => {
+  try {
+    const rankings = await connectionRankings(req.connectedTokens);
+    res.json({
+      updatedAt: new Date().toISOString(),
+      mostLaps: [...rankings].filter((entry) => !entry.unavailable).sort((a, b) => b.laps - a.laps),
+      fastestLap: [...rankings].filter((entry) => !entry.unavailable && entry.fastest).sort((a, b) => {
+        const seconds = (value) => value.split(":").reduce((total, part) => total * 60 + Number(part), 0);
+        return seconds(a.fastest) - seconds(b.fastest);
+      })
+    });
+  } catch (error) { next(error); }
 });
 app.post("/admin/tickets/:id", requireAdmin, async (req, res, next) => {
   try {
