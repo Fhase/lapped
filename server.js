@@ -912,6 +912,13 @@ app.get("/admin/rankings", requireAdmin, async (req, res, next) => {
     });
   } catch (error) { next(error); }
 });
+app.get("/admin/athletes/:athleteId/disconnect", requireAdmin, (req, res) => {
+  const athleteId = String(req.params.athleteId || "");
+  const athlete = req.connectedTokens[athleteId]?.athlete;
+  if (!athlete) return res.sendStatus(404);
+  const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "this athlete";
+  res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Disconnect athlete — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}form{margin-top:30px;display:flex;gap:12px;align-items:center}button,a{font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none;cursor:pointer}a{background:transparent;color:#20201e}</style><main class="wrap"><h1>Disconnect ${escapeHtml(name)}?</h1><p>This removes only Strava athlete ${escapeHtml(athleteId)} from Lapped and revokes Lapped’s Strava authorization for that account. It does not affect any other connected athlete.</p><form method="post" action="/admin/athletes/${encodeURIComponent(athleteId)}/disconnect"><button type="submit">Disconnect athlete</button><a href="/admin">Cancel</a></form></main>`);
+});
 app.post("/admin/athletes/:athleteId/disconnect", requireAdmin, async (req, res, next) => {
   try {
     const athleteId = String(req.params.athleteId || "");
@@ -927,6 +934,7 @@ app.post("/admin/athletes/:athleteId/disconnect", requireAdmin, async (req, res,
         headers: { Authorization: `Bearer ${token.access_token}` }
       }).catch(() => {});
     }
+    if (req.accepts("html")) return res.redirect("/admin");
     res.json({ ok: true, athleteId });
   } catch (error) { next(error); }
 });
