@@ -50,7 +50,7 @@ const processingRetries = new Map();
 const rankingCacheMs = 24 * 60 * 60 * 1000;
 let connectionRankingCache = null;
 const leaderboardStepMs = 5 * 60 * 1000;
-const leaderboardBackfillStepMs = 30 * 1000;
+const leaderboardBackfillStepMs = 5 * 60 * 1000;
 let leaderboardTimer = null;
 let leaderboardBusy = false;
 
