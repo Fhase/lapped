@@ -39,6 +39,11 @@ const oauthWindowMs = 10 * 60 * 1000;
 const oauthRequestsByIp = new Map();
 const featureRequestWindowMs = 60 * 60 * 1000;
 const featureRequestSubmissions = new Map();
+// Strava can announce a freshly uploaded activity before its segment efforts
+// have finished processing. Keep one short, in-memory retry per activity so an
+// import is not missed, without doubling scans for title edits or every webhook.
+const processingRetryDelayMs = 2 * 60 * 1000;
+const processingRetries = new Map();
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -538,17 +543,56 @@ async function scanActivity(req, activityId) {
   const token = await accessToken(req);
   return scanActivityWithToken(token, activityId, req.session.strava.athlete?.id);
 }
-async function scanActivityWithToken(token, activityId, athleteId) {
+
+function processingRetryKey(athleteId, activityId) {
+  return `${athleteId}:${activityId}`;
+}
+
+function clearProcessingRetry(athleteId, activityId) {
+  const key = processingRetryKey(athleteId, activityId);
+  const timer = processingRetries.get(key);
+  if (!timer) return;
+  clearTimeout(timer);
+  processingRetries.delete(key);
+}
+
+function queueProcessingRetry(athleteId, activityId) {
+  if (!athleteId || !activityId) return;
+  const key = processingRetryKey(athleteId, activityId);
+  if (processingRetries.has(key)) return;
+  const timer = setTimeout(async () => {
+    processingRetries.delete(key);
+    try {
+      // Never resurrect a connection after the athlete has disconnected.
+      if (!(await athleteIsStillConnected(athleteId))) return;
+      const token = await tokenForAthlete(athleteId);
+      await scanActivityWithToken(token, activityId, athleteId);
+    } catch (error) {
+      console.error("Delayed activity scan failed:", error.message);
+    }
+  }, processingRetryDelayMs);
+  timer.unref?.();
+  processingRetries.set(key, timer);
+}
+
+async function scanActivityWithToken(token, activityId, athleteId, { retryIfProcessing = false } = {}) {
   const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
   if (await activityWasProcessed(athleteId, activityId)) {
+    clearProcessingRetry(athleteId, activityId);
     return { lapCount, changed: false, description: activity.description ?? "" };
   }
   if (hasLappedReceipt(activity.description)) {
+    clearProcessingRetry(athleteId, activityId);
     return { lapCount, changed: false, description: activity.description ?? "" };
   }
-  if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
+  if (!lapCount) {
+    if (retryIfProcessing) queueProcessingRetry(athleteId, activityId);
+    return { lapCount: 0, changed: false, description: activity.description ?? "" };
+  }
+
+  clearProcessingRetry(athleteId, activityId);
 
   const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
@@ -697,7 +741,7 @@ app.post("/webhook", (req, res) => {
   const event = req.body;
   if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
   tokenForAthlete(event.owner_id)
-    .then((token) => scanActivityWithToken(token, event.object_id, event.owner_id))
+    .then((token) => scanActivityWithToken(token, event.object_id, event.owner_id, { retryIfProcessing: event.aspect_type === "create" }))
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
