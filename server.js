@@ -919,6 +919,11 @@ app.get("/leaderboard", async (_req, res, next) => {
 });
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
+    if (req.query.view === "leaderboard" && req.query.refresh) {
+      const athleteId = String(req.query.refresh);
+      if (req.connectedTokens[athleteId]) await refreshLeaderboardLifetime(athleteId, req.connectedTokens);
+      return res.redirect("/leaderboard");
+    }
     if (req.query.view === "laps" || req.query.view === "leaderboard") return res.redirect("/leaderboard");
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
     const query = String(req.query.q || "").slice(0, 80);
