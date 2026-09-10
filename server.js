@@ -383,15 +383,17 @@ function rankingPanel(rankings) {
     const seconds = (value) => value.split(":").reduce((total, part) => total * 60 + Number(part), 0);
     return seconds(a.fastest) - seconds(b.fastest);
   });
-  const rows = (entries, value) => entries.map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${escapeHtml(value(entry))}</td></tr>`).join("") || '<tr><td colspan="3">No lap data yet.</td></tr>';
-  return `<style>.rankings{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.rankings h2{font-size:15px;margin:0 0 6px;font-weight:500}.rankings p{color:var(--muted);font-size:12px;margin:0 0 18px}.ranking-grids{display:grid;grid-template-columns:1fr 1fr;gap:36px}.rankings td:first-child{color:var(--muted);width:30px}.rankings td:last-child{text-align:right;color:var(--ink)}@media(max-width:600px){.ranking-grids{grid-template-columns:1fr;gap:32px}}</style><section class="rankings"><h2>Laps since connecting</h2><p>High Park segment efforts since each athlete joined Lapped.</p><div class="ranking-grids"><div><h2>Most laps</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows(byLaps, (entry) => entry.laps)}</tbody></table></div><div><h2>Fastest lap</h2><table><thead><tr><th>#</th><th>athlete</th><th>time</th></tr></thead><tbody>${rows(byFastest, (entry) => entry.fastest)}</tbody></table></div></div></section>`;
+  const distance = (laps) => `${(Number(laps) * 1.85).toLocaleString(undefined, { maximumFractionDigits: 2 })} km`;
+  const rows = (entries, value, showDistance = false) => entries.map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${escapeHtml(value(entry))}</td>${showDistance ? `<td>${distance(entry.laps)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${showDistance ? 4 : 3}">No lap data yet.</td></tr>`;
+  return `<style>.rankings{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.rankings h2{font-size:15px;margin:0 0 6px;font-weight:500}.rankings p{color:var(--muted);font-size:12px;margin:0 0 18px}.ranking-grids{display:grid;grid-template-columns:1fr 1fr;gap:36px}.rankings td:first-child{color:var(--muted);width:30px}.rankings th:nth-last-child(-n+2),.rankings td:nth-last-child(-n+2){text-align:right}.rankings td:last-child{color:var(--ink)}@media(max-width:600px){.ranking-grids{grid-template-columns:1fr;gap:32px}}</style><section class="rankings"><h2>Laps since connecting</h2><p>High Park segment efforts since each athlete joined Lapped.</p><div class="ranking-grids"><div><h2>Most laps</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th><th>km</th></tr></thead><tbody>${rows(byLaps, (entry) => entry.laps, true)}</tbody></table></div><div><h2>Fastest lap</h2><table><thead><tr><th>#</th><th>athlete</th><th>time</th></tr></thead><tbody>${rows(byFastest, (entry) => entry.fastest)}</tbody></table></div></div></section>`;
 }
 
 function leaderboardPanel(board, tokens) {
   const entries = Object.entries(board.athletes || {}).filter(([athleteId]) => tokens[athleteId]).map(([, entry]) => entry);
+  const distance = (laps) => `${(Number(laps) * 1.85).toLocaleString(undefined, { maximumFractionDigits: 2 })} km`;
   const rows = (key) => entries.filter((entry) => entry[key]?.status === "ready")
     .sort((a, b) => b[key].value - a[key].value)
-    .map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${entry[key].value}</td></tr>`).join("");
+    .map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${entry[key].value}</td><td>${distance(entry[key].value)}</td></tr>`).join("");
   // A historical YTD scan can span several pages. Show the collected total
   // immediately (with a +) rather than leaving the whole table blank until
   // that athlete's final page has been read.
@@ -400,11 +402,11 @@ function leaderboardPanel(board, tokens) {
     .map((entry, index) => {
       const complete = entry.ytd.status === "ready";
       const value = complete ? entry.ytd.value : entry.ytd.total;
-      return `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${value}${complete ? "" : "+"}</td></tr>`;
+      return `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${value}${complete ? "" : "+"}</td><td>${distance(value)}${complete ? "" : "+"}</td></tr>`;
     }).join("");
   const loading = entries.filter((entry) => entry.allTime?.status !== "ready" || entry.ytd?.status !== "ready").length;
-  const empty = '<tr><td colspan="3">loading stats… come back in a while</td></tr>';
-  return `<style>.leaderboard{padding-top:18px;margin-top:64px}.leaderboard h2{font-size:15px;margin:0 0 6px;font-weight:500}.leaderboard p{color:var(--muted);font-size:12px;margin:0 0 18px}.leaderboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px}.leaderboard td:first-child{color:var(--muted);width:30px}.leaderboard td:last-child{color:var(--ink)}@media(max-width:600px){.leaderboard-grid{grid-template-columns:1fr;gap:32px}}</style><section class="leaderboard"><h2>High Park leaderboard</h2><p>${loading ? `loading stats for ${loading} athlete${loading === 1 ? "" : "s"}… come back in a while` : "up to date"}</p><div class="leaderboard-grid"><div><h2>All time</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("allTime") || empty}</tbody></table></div><div><h2>${new Date().getUTCFullYear()}</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${ytdRows || empty}</tbody></table></div></div></section>`;
+  const empty = '<tr><td colspan="4">loading stats… come back in a while</td></tr>';
+  return `<style>.leaderboard{padding-top:18px;margin-top:64px}.leaderboard h2{font-size:15px;margin:0 0 6px;font-weight:500}.leaderboard p{color:var(--muted);font-size:12px;margin:0 0 18px}.leaderboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px}.leaderboard td:first-child{color:var(--muted);width:30px}.leaderboard th:nth-last-child(-n+2),.leaderboard td:nth-last-child(-n+2){text-align:right}.leaderboard td:last-child{color:var(--ink)}@media(max-width:600px){.leaderboard-grid{grid-template-columns:1fr;gap:32px}}</style><section class="leaderboard"><h2>High Park leaderboard</h2><p>${loading ? `loading stats for ${loading} athlete${loading === 1 ? "" : "s"}… come back in a while` : "up to date"}</p><div class="leaderboard-grid"><div><h2>All time</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th><th>km</th></tr></thead><tbody>${rows("allTime") || empty}</tbody></table></div><div><h2>${new Date().getUTCFullYear()}</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th><th>km</th></tr></thead><tbody>${ytdRows || empty}</tbody></table></div></div></section>`;
 }
 
 function publicLeaderboardPage(board, tokens, rankings) {
