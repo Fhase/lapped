@@ -23,6 +23,7 @@ const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
 const featureRequestsStore = path.join(dataDir, "feature-requests.json");
+const leaderboardStore = path.join(dataDir, "leaderboard.json");
 const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY
   ? crypto.createHash("sha256").update(process.env.TOKEN_ENCRYPTION_KEY).digest()
   : null;
@@ -46,6 +47,9 @@ const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
 const rankingCacheMs = 15 * 60 * 1000;
 let connectionRankingCache = null;
+const leaderboardStepMs = 5 * 60 * 1000;
+let leaderboardTimer = null;
+let leaderboardBusy = false;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -380,6 +384,16 @@ function rankingPanel(rankings) {
   return `<style>.rankings{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.rankings h2{font-size:15px;margin:0 0 6px;font-weight:500}.rankings p{color:var(--muted);font-size:12px;margin:0 0 18px}.ranking-grids{display:grid;grid-template-columns:1fr 1fr;gap:36px}.rankings td:first-child{color:var(--muted);width:30px}.rankings td:last-child{text-align:right;color:var(--ink)}@media(max-width:600px){.ranking-grids{grid-template-columns:1fr;gap:32px}}</style><section class="rankings"><h2>Laps since connecting</h2><p>High Park segment efforts since each athlete joined Lapped.</p><div class="ranking-grids"><div><h2>Most laps</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows(byLaps, (entry) => entry.laps)}</tbody></table></div><div><h2>Fastest lap</h2><table><thead><tr><th>#</th><th>athlete</th><th>time</th></tr></thead><tbody>${rows(byFastest, (entry) => entry.fastest)}</tbody></table></div></div></section>`;
 }
 
+function leaderboardPanel(board, tokens) {
+  const entries = Object.entries(board.athletes || {}).filter(([athleteId]) => tokens[athleteId]).map(([, entry]) => entry);
+  const rows = (key) => entries.filter((entry) => entry[key]?.status === "ready")
+    .sort((a, b) => b[key].value - a[key].value)
+    .map((entry, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(entry.name)}</td><td>${entry[key].value}</td></tr>`).join("");
+  const loading = entries.filter((entry) => entry.allTime?.status !== "ready" || entry.ytd?.status !== "ready").length;
+  const empty = '<tr><td colspan="3">loading stats… come back in a while</td></tr>';
+  return `<style>.leaderboard{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.leaderboard h2{font-size:15px;margin:0 0 6px;font-weight:500}.leaderboard p{color:var(--muted);font-size:12px;margin:0 0 18px}.leaderboard-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px}.leaderboard td:first-child{color:var(--muted);width:30px}.leaderboard td:last-child{color:var(--ink)}@media(max-width:600px){.leaderboard-grid{grid-template-columns:1fr;gap:32px}}</style><section class="leaderboard"><h2>High Park leaderboard</h2><p>${loading ? `loading stats for ${loading} athlete${loading === 1 ? "" : "s"}… come back in a while` : "up to date"}</p><div class="leaderboard-grid"><div><h2>All time</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("allTime") || empty}</tbody></table></div><div><h2>${new Date().getUTCFullYear()}</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows("ytd") || empty}</tbody></table></div></div></section>`;
+}
+
 function adminPage(tokens, analytics, { page, query }) {
   const athletes = Object.values(tokens).sort((a, b) => String(b.connected_at || "").localeCompare(String(a.connected_at || "")));
   const filtered = query ? athletes.filter((token) => `${token.athlete?.firstname || ""} ${token.athlete?.lastname || ""} ${token.athlete?.id || ""}`.toLowerCase().includes(query.toLowerCase())) : athletes;
@@ -395,7 +409,7 @@ function adminPage(tokens, analytics, { page, query }) {
   const pagination = `<nav class="pages">${pageCount > 1 ? Array.from({ length: pageCount }, (_, index) => { const number = index + 1; return `<a ${number === safePage ? 'aria-current="page"' : ""} href="/admin?page=${number}${query ? `&q=${encodeURIComponent(query)}` : ""}">${number}</a>`; }).join("") : ""}</nav>`;
   return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
     :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px 32px 72px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label,.admin-link{color:var(--muted);font-size:12px}.admin-link{text-decoration:underline;text-underline-offset:3px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 42px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.chart-panel{margin-bottom:64px}.chart-tabs{display:flex;gap:8px;margin:15px 0}.chart-tabs button,.pages a{background:none;color:var(--muted);border:1px solid var(--line);padding:7px 10px;font:12px Arial;cursor:pointer;text-decoration:none}.chart-tabs button[aria-pressed="true"],.pages a[aria-current="page"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}.chart{height:170px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--line);padding-top:12px}.chart[hidden]{display:none}.bar{height:100%;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:end;gap:6px}.bar i{display:block;position:relative;height:var(--height);background:var(--accent);transform-origin:bottom;animation:bar-rise .58s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--index) * 18ms)}.bar i:hover::after{content:attr(data-value);position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--ink);color:var(--paper);font:11px Arial;white-space:nowrap;padding:6px 7px}.bar span{display:block;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-align:center}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}.search{display:flex}.search input{background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px;font:13px Arial}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}.pages{display:flex;gap:5px;margin-top:18px}.footer{margin-top:72px;color:var(--muted);font-size:12px}@keyframes bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){.bar i{animation:none}}@media(max-width:600px){body{padding:20px 20px 52px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:40px}.panel-head{display:block}.panel-head p{margin-top:8px}.search{margin-top:14px}table{font-size:12px}th:nth-child(2),td:nth-child(2){display:none}}
-  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><a class="admin-link" href="/admin?view=laps">lap rankings</a><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section><section class="panel"><div class="panel-head"><div><h2>People connected to Lapped</h2></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID" autocomplete="off"></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section><footer class="footer">Lapped 2026</footer></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)});const search=document.querySelector('.search input');let searchTimer;search?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>search.form.submit(),280)})</script></body></html>`;
+  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><a class="admin-link" href="/admin?view=leaderboard">leaderboard</a><a class="admin-link" href="/admin?view=laps">lap rankings</a><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section><section class="panel"><div class="panel-head"><div><h2>People connected to Lapped</h2></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID" autocomplete="off"></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section><footer class="footer">Lapped 2026</footer></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)});const search=document.querySelector('.search input');let searchTimer;search?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>search.form.submit(),280)})</script></body></html>`;
 }
 
 async function requireAdmin(req, res, next) {
@@ -448,6 +462,97 @@ async function tokenForAthlete(athleteId) {
   refreshed.athlete = token.athlete;
   await saveToken(refreshed);
   return refreshed.access_token;
+}
+
+function leaderboardName(token) {
+  return [token.athlete?.firstname, token.athlete?.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
+}
+
+async function ensureLeaderboard(tokens) {
+  const board = await readEncryptedStore(leaderboardStore);
+  board.athletes ||= {};
+  let changed = false;
+  for (const [athleteId, token] of Object.entries(tokens)) {
+    if (!board.athletes[athleteId]) {
+      board.athletes[athleteId] = {
+        name: leaderboardName(token),
+        allTime: { status: "loading", value: null },
+        ytd: { status: "loading", value: null, page: 1, total: 0, seen: [] }
+      };
+      changed = true;
+    } else if (board.athletes[athleteId].name !== leaderboardName(token)) {
+      board.athletes[athleteId].name = leaderboardName(token);
+      changed = true;
+    }
+  }
+  if (changed) await writeEncryptedStore(leaderboardStore, board);
+  scheduleLeaderboardStep(1000);
+  return board;
+}
+
+function scheduleLeaderboardStep(delay = leaderboardStepMs) {
+  if (leaderboardTimer) return;
+  leaderboardTimer = setTimeout(() => {
+    leaderboardTimer = null;
+    runLeaderboardStep().catch((error) => console.error("Leaderboard step failed:", error.message));
+  }, delay);
+  leaderboardTimer.unref?.();
+}
+
+async function runLeaderboardStep() {
+  if (leaderboardBusy) return;
+  leaderboardBusy = true;
+  try {
+    const [board, tokens] = await Promise.all([readEncryptedStore(leaderboardStore), readTokens()]);
+    const entries = Object.entries(board.athletes || {}).filter(([athleteId]) => tokens[athleteId]);
+    const next = entries.find(([, entry]) => entry.allTime?.status === "loading")
+      || entries.find(([, entry]) => entry.ytd?.status === "loading");
+    if (!next) return;
+    const [athleteId, entry] = next;
+    const accessTokenValue = await tokenForAthlete(athleteId);
+    if (entry.allTime?.status === "loading") {
+      const segment = await strava(`/segments/${segmentId}`, stravaHeaders(accessTokenValue));
+      entry.allTime = { status: "ready", value: Number(segment.athlete_segment_stats?.effort_count) || 0, checkedAt: Date.now() };
+    } else {
+      const year = new Date().getUTCFullYear();
+      const params = new URLSearchParams({
+        segment_id: segmentId,
+        start_date_local: new Date(Date.UTC(year, 0, 1)).toISOString(),
+        end_date_local: new Date().toISOString(),
+        page: String(entry.ytd.page || 1),
+        per_page: "200"
+      });
+      const batch = await strava(`/segment_efforts?${params}`, stravaHeaders(accessTokenValue));
+      const seen = new Set(entry.ytd.seen || []);
+      for (const effort of batch) seen.add(String(effort.id));
+      entry.ytd.total = seen.size;
+      entry.ytd.seen = [...seen];
+      if (batch.length < 200) entry.ytd = { status: "ready", value: seen.size, checkedAt: Date.now() };
+      else entry.ytd.page = (entry.ytd.page || 1) + 1;
+    }
+    board.athletes[athleteId] = entry;
+    await writeEncryptedStore(leaderboardStore, board);
+  } catch (error) {
+    console.error("Slow leaderboard read failed:", error.message);
+  } finally {
+    leaderboardBusy = false;
+    scheduleLeaderboardStep();
+  }
+}
+
+async function addCompletedActivityToLeaderboard(athleteId, activityId, result) {
+  if (!result?.changed || !athleteId || !activityId) return;
+  const board = await readEncryptedStore(leaderboardStore);
+  const entry = board.athletes?.[athleteId];
+  if (!entry) return; // Historical sync has not started for this athlete yet.
+  entry.activityIds ||= [];
+  if (entry.activityIds.includes(String(activityId))) return;
+  entry.activityIds = [...entry.activityIds.slice(-499), String(activityId)];
+  if (entry.allTime?.status === "ready") entry.allTime.value += result.lapCount;
+  const year = new Date().getUTCFullYear();
+  if (entry.ytd?.status === "ready" && new Date(result.activityStart || 0).getUTCFullYear() === year) entry.ytd.value += result.lapCount;
+  board.athletes[athleteId] = entry;
+  await writeEncryptedStore(leaderboardStore, board);
 }
 
 function formatElapsedTime(seconds) {
@@ -698,7 +803,7 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
   });
   await markActivityProcessed(athleteId, activityId);
   await clearLapStats(athleteId);
-  return { lapCount, changed: true, description };
+  return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
 
 app.get("/auth/strava", (req, res) => {
@@ -760,13 +865,15 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
     const query = String(req.query.q || "").slice(0, 80);
     const showRankings = req.query.view === "laps";
+    const showLeaderboard = req.query.view === "leaderboard";
     const [analytics, tickets, rankings] = await Promise.all([
       readEncryptedStore(analyticsStore),
       readEncryptedStore(featureRequestsStore),
       showRankings ? connectionRankings(req.connectedTokens) : Promise.resolve(null)
     ]);
+    const leaderboard = showLeaderboard ? await ensureLeaderboard(req.connectedTokens) : null;
     const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
-    const extras = `${rankings ? rankingPanel(rankings) : ""}${ticketPanel(tickets)}`;
+    const extras = `${rankings ? rankingPanel(rankings) : ""}${leaderboard ? leaderboardPanel(leaderboard, req.connectedTokens) : ""}${ticketPanel(tickets)}`;
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
   } catch (error) { next(error); }
 });
@@ -837,8 +944,14 @@ app.post("/webhook", (req, res) => {
   const event = req.body;
   if (event.object_type !== "activity" || !["create", "update"].includes(event.aspect_type)) return;
   tokenForAthlete(event.owner_id)
-    .then((token) => scanActivityWithToken(token, event.object_id, event.owner_id, { retryIfProcessing: event.aspect_type === "create" }))
+    .then(async (token) => {
+      const result = await scanActivityWithToken(token, event.object_id, event.owner_id, { retryIfProcessing: event.aspect_type === "create" });
+      await addCompletedActivityToLeaderboard(event.owner_id, event.object_id, result);
+    })
     .catch((error) => console.error("Webhook scan failed:", error.message));
 });
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
-app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER_EXTERNAL_URL ? "0.0.0.0" : "127.0.0.1"), () => console.log(`Lapped running at ${baseUrl}`));
+app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER_EXTERNAL_URL ? "0.0.0.0" : "127.0.0.1"), () => {
+  console.log(`Lapped running at ${baseUrl}`);
+  scheduleLeaderboardStep();
+});
