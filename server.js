@@ -46,6 +46,7 @@ const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
 const rankingCacheMs = 15 * 60 * 1000;
 let connectionRankingCache = null;
+let todayGroupReportCache = null;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -380,6 +381,13 @@ function rankingPanel(rankings) {
   return `<style>.rankings{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.rankings h2{font-size:15px;margin:0 0 6px;font-weight:500}.rankings p{color:var(--muted);font-size:12px;margin:0 0 18px}.ranking-grids{display:grid;grid-template-columns:1fr 1fr;gap:36px}.rankings td:first-child{color:var(--muted);width:30px}.rankings td:last-child{text-align:right;color:var(--ink)}@media(max-width:600px){.ranking-grids{grid-template-columns:1fr;gap:32px}}</style><section class="rankings"><h2>Laps since connecting</h2><p>High Park segment efforts since each athlete joined Lapped.</p><div class="ranking-grids"><div><h2>Most laps</h2><table><thead><tr><th>#</th><th>athlete</th><th>laps</th></tr></thead><tbody>${rows(byLaps, (entry) => entry.laps)}</tbody></table></div><div><h2>Fastest lap</h2><table><thead><tr><th>#</th><th>athlete</th><th>time</th></tr></thead><tbody>${rows(byFastest, (entry) => entry.fastest)}</tbody></table></div></div></section>`;
 }
 
+function todayGroupReportPanel(report) {
+  const value = (number, suffix) => Number.isFinite(number) ? `${number} ${suffix}` : "—";
+  const rideRows = report.rides.map((ride) => `<tr><td>${escapeHtml(ride.name)}</td><td>${ride.laps}</td><td>${escapeHtml(value(ride.averageWatts, "W"))}</td><td>${escapeHtml(value(ride.weightedWatts, "W"))}</td><td>${escapeHtml(value(ride.averageHeartrate, "bpm"))}</td><td>${escapeHtml(value(ride.maxHeartrate, "bpm"))}</td></tr>`).join("") || '<tr><td colspan="6">No completed High Park rides found today.</td></tr>';
+  const separationRows = report.separations.map((entry) => `<tr><td>${escapeHtml(entry.at)}</td><td>${escapeHtml(entry.rider)}</td><td>${escapeHtml(entry.nearest)}</td><td>${entry.gap} m</td></tr>`).join("") || '<tr><td colspan="4">No sustained GPS separation detected.</td></tr>';
+  return `<style>.group-report{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.group-report h2{font-size:15px;margin:0 0 6px;font-weight:500}.group-report p{color:var(--muted);font-size:12px;margin:0 0 18px}.group-report .data-wrap{overflow-x:auto}.group-report td:last-child{color:var(--ink)}.group-report .report-note{margin-top:18px;line-height:1.45}</style><section class="group-report"><h2>Today’s group ride</h2><p>Read once at ${escapeHtml(formatTorontoTime(report.generatedAt))}; no activity data is saved by this report.</p><div class="data-wrap"><table><thead><tr><th>athlete</th><th>laps</th><th>avg power</th><th>weighted power</th><th>avg HR</th><th>max HR</th></tr></thead><tbody>${rideRows}</tbody></table></div><h2 style="margin-top:36px">Sustained separations</h2><p>GPS inference: previously within 75 m, then at least 150 m from the nearest rider for two minutes. This is a gap signal, not proof that someone was dropped.</p><div class="data-wrap"><table><thead><tr><th>time</th><th>rider</th><th>nearest rider</th><th>gap</th></tr></thead><tbody>${separationRows}</tbody></table></div><p class="report-note">HR and power appear only where the athlete’s recording supplied them.</p></section>`;
+}
+
 function adminPage(tokens, analytics, { page, query }) {
   const athletes = Object.values(tokens).sort((a, b) => String(b.connected_at || "").localeCompare(String(a.connected_at || "")));
   const filtered = query ? athletes.filter((token) => `${token.athlete?.firstname || ""} ${token.athlete?.lastname || ""} ${token.athlete?.id || ""}`.toLowerCase().includes(query.toLowerCase())) : athletes;
@@ -508,6 +516,117 @@ async function connectionRankings(tokens) {
 
   connectionRankingCache = { fingerprint, checkedAt: Date.now(), rankings };
   return rankings;
+}
+
+function torontoDayRange() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Toronto", year: "numeric", month: "2-digit", day: "2-digit", timeZoneName: "longOffset"
+  }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  const offset = value("timeZoneName")?.replace("GMT", "") || "-04:00";
+  const start = new Date(`${value("year")}-${value("month")}-${value("day")}T00:00:00${offset}`);
+  return { start, end: now };
+}
+
+function average(values) {
+  const usable = values.map(Number).filter((value) => Number.isFinite(value) && value > 0);
+  return usable.length ? Math.round(usable.reduce((sum, value) => sum + value, 0) / usable.length) : null;
+}
+
+function formatTorontoTime(value) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+}
+
+function haversineMetres([latA, lngA], [latB, lngB]) {
+  const radians = Math.PI / 180;
+  const dLat = (latB - latA) * radians;
+  const dLng = (lngB - lngA) * radians;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(latA * radians) * Math.cos(latB * radians) * Math.sin(dLng / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function nearestStreamPoint(ride, unixTime) {
+  const times = ride.streams?.time?.data;
+  const points = ride.streams?.latlng?.data;
+  if (!Array.isArray(times) || !Array.isArray(points) || !times.length) return null;
+  const offset = unixTime - Math.floor(new Date(ride.activity.start_date).getTime() / 1000);
+  let low = 0, high = times.length - 1;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (times[middle] <= offset) low = middle;
+    else high = middle - 1;
+  }
+  const candidates = [low, low + 1].filter((index) => index >= 0 && index < times.length);
+  const index = candidates.sort((a, b) => Math.abs(times[a] - offset) - Math.abs(times[b] - offset))[0];
+  return index !== undefined && Math.abs(times[index] - offset) <= 25 && Array.isArray(points[index]) ? points[index] : null;
+}
+
+function inferredSeparations(rides) {
+  const positioned = rides.filter((ride) => ride.streams?.time?.data?.length && ride.streams?.latlng?.data?.length);
+  if (positioned.length < 2) return [];
+  const starts = positioned.map((ride) => Math.floor(new Date(ride.activity.start_date).getTime() / 1000));
+  const ends = positioned.map((ride, index) => starts[index] + Number(ride.activity.elapsed_time || ride.activity.moving_time || 0));
+  const samples = new Map(positioned.map((ride) => [ride.athleteId, []]));
+  for (let time = Math.min(...starts); time <= Math.max(...ends); time += 30) {
+    const points = positioned.map((ride) => ({ ride, point: nearestStreamPoint(ride, time) })).filter((entry) => entry.point);
+    for (const entry of points) {
+      const nearest = points.filter((other) => other !== entry)
+        .map((other) => ({ ride: other.ride, distance: haversineMetres(entry.point, other.point) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+      if (nearest) samples.get(entry.ride.athleteId).push({ time, distance: nearest.distance, nearest: nearest.ride.name });
+    }
+  }
+  const output = [];
+  for (const ride of positioned) {
+    const riderSamples = samples.get(ride.athleteId) || [];
+    const firstClose = riderSamples.findIndex((sample) => sample.distance <= 75);
+    if (firstClose < 0) continue;
+    for (let index = firstClose + 1; index <= riderSamples.length - 4; index += 1) {
+      const run = riderSamples.slice(index, index + 4);
+      if (run.every((sample) => sample.distance >= 150)) {
+        output.push({ rider: ride.name, nearest: run[0].nearest, at: formatTorontoTime(run[0].time * 1000), gap: Math.round(run[0].distance), duration: 2 });
+        break;
+      }
+    }
+  }
+  return output;
+}
+
+async function todayGroupReport(tokens) {
+  if (todayGroupReportCache && Date.now() - todayGroupReportCache.checkedAt < 15 * 60 * 1000) return todayGroupReportCache.report;
+  const { start, end } = torontoDayRange();
+  const rides = (await Promise.all(Object.entries(tokens).map(async ([athleteId, token]) => {
+    try {
+      const accessTokenValue = await tokenForAthlete(athleteId);
+      const efforts = await segmentEffortsSince(accessTokenValue, start);
+      const grouped = new Map();
+      for (const effort of efforts) {
+        const activityId = effort.activity?.id || effort.activity_id;
+        if (activityId) grouped.set(String(activityId), (grouped.get(String(activityId)) || 0) + 1);
+      }
+      const activityId = [...grouped.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (!activityId) return null;
+      const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, stravaHeaders(accessTokenValue));
+      const streams = await strava(`/activities/${activityId}/streams?keys=time,latlng,heartrate,watts,velocity_smooth&key_by_type=true`, stravaHeaders(accessTokenValue));
+      const name = [token.athlete?.firstname, token.athlete?.lastname].filter(Boolean).join(" ") || "Unnamed athlete";
+      return {
+        athleteId, name, activity, streams,
+        laps: grouped.get(activityId),
+        averageHeartrate: Number(activity.average_heartrate) || average(streams.heartrate?.data || []),
+        maxHeartrate: Number(activity.max_heartrate) || null,
+        averageWatts: Number(activity.average_watts) || average(streams.watts?.data || []),
+        weightedWatts: Number(activity.weighted_average_watts) || null,
+        maxWatts: Number(activity.max_watts) || null
+      };
+    } catch (error) {
+      console.error(`Today group report failed for athlete ${athleteId}:`, error.message);
+      return null;
+    }
+  }))).filter(Boolean);
+  const report = { generatedAt: new Date().toISOString(), rides, separations: inferredSeparations(rides) };
+  todayGroupReportCache = { checkedAt: Date.now(), report };
+  return report;
 }
 
 const lapStatsCacheMs = 24 * 60 * 60 * 1000;
@@ -760,13 +879,15 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
     const query = String(req.query.q || "").slice(0, 80);
     const showRankings = req.query.view === "laps";
-    const [analytics, tickets, rankings] = await Promise.all([
+    const showGroupReport = req.query.view === "group-report";
+    const [analytics, tickets, rankings, groupReport] = await Promise.all([
       readEncryptedStore(analyticsStore),
       readEncryptedStore(featureRequestsStore),
-      showRankings ? connectionRankings(req.connectedTokens) : Promise.resolve(null)
+      showRankings ? connectionRankings(req.connectedTokens) : Promise.resolve(null),
+      showGroupReport ? todayGroupReport(req.connectedTokens) : Promise.resolve(null)
     ]);
     const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
-    const extras = `${rankings ? rankingPanel(rankings) : ""}${ticketPanel(tickets)}`;
+    const extras = `${rankings ? rankingPanel(rankings) : ""}${groupReport ? todayGroupReportPanel(groupReport) : ""}${ticketPanel(tickets)}`;
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
   } catch (error) { next(error); }
 });
