@@ -370,6 +370,14 @@ const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}.
 document.querySelector('.search')?.remove();
 </script>`;
 
+function manualPushPanel() {
+  return `<style>.manual-push{margin:0 0 64px}.manual-push .panel-head{display:block}.manual-push .panel-head p{margin-top:7px;max-width:560px;line-height:1.45}.manual-push-form{display:flex;gap:8px;margin-top:18px}.manual-push input{min-width:0;flex:1;background:transparent;color:var(--ink);border:1px solid var(--line);padding:11px 12px;font:14px Arial}.manual-push button{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:11px 14px;font:13px Arial;cursor:pointer;white-space:nowrap}.manual-push button[disabled]{cursor:wait;opacity:.6}.manual-result{min-height:20px;margin:13px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.manual-result[data-state="ready"]{color:var(--ink)}.manual-confirm{margin-top:14px}.manual-confirm[hidden]{display:none}@media(max-width:600px){.manual-push-form{display:block}.manual-push input{width:100%}.manual-push-form button{width:100%;margin-top:8px}}</style><section class="panel manual-push" aria-labelledby="manual-push-title"><div class="panel-head"><h2 id="manual-push-title">Manual ride push</h2><p>Paste a Strava activity link to check a connected athlete’s ride. Nothing is written until you confirm.</p></div><form class="manual-push-form" id="manual-push-form"><input id="manual-push-url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.strava.com/activities/123…" required><button id="manual-push-check" type="submit">Check ride</button></form><div class="manual-result" id="manual-push-result" aria-live="polite"></div><button class="manual-confirm" id="manual-push-confirm" type="button" hidden>Push description</button></section>`;
+}
+
+const manualPushEnhancements = `<script>
+(()=>{const form=document.querySelector('#manual-push-form'),input=document.querySelector('#manual-push-url'),check=document.querySelector('#manual-push-check'),result=document.querySelector('#manual-push-result'),confirm=document.querySelector('#manual-push-confirm');if(!form)return;let readyUrl='';const post=async(path,url)=>{const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({url})});const body=await response.json().catch(()=>({error:'Something went wrong.'}));if(!response.ok)throw new Error(body.error||'Something went wrong.');return body};const show=(body)=>{result.textContent=body.message||'';result.dataset.state=body.status||'';readyUrl=body.status==='ready'?input.value.trim():'';confirm.hidden=!readyUrl};form.addEventListener('submit',async(event)=>{event.preventDefault();confirm.hidden=true;readyUrl='';check.disabled=true;result.textContent='Checking saved connections…';result.dataset.state='';try{show(await post('/admin/activity-review/check',input.value.trim()))}catch(error){result.textContent=error.message}finally{check.disabled=false}});confirm.addEventListener('click',async()=>{if(!readyUrl)return;confirm.disabled=true;result.textContent='Writing description…';try{show(await post('/admin/activity-review/apply',readyUrl));if(result.dataset.state==='pushed')input.value=''}catch(error){result.textContent=error.message}finally{confirm.disabled=false}})})();
+</script>`;
+
 function ticketPanel(stored) {
   const requests = Array.isArray(stored) ? stored : [];
   const renderTicket = (request, archived = false) => `<article class="ticket" data-ticket-id="${escapeHtml(request.id)}"><div><p>${escapeHtml(request.text)}</p><small>${escapeHtml(formatJoinedAt(request.created_at))}</small></div><div class="ticket-actions">${archived ? "" : '<button data-ticket-action="archive">archive</button>'}<button data-ticket-action="delete">delete</button></div></article>`;
@@ -430,7 +438,7 @@ function adminPage(tokens, analytics, { page, query }) {
   const pagination = `<nav class="pages">${pageCount > 1 ? Array.from({ length: pageCount }, (_, index) => { const number = index + 1; return `<a ${number === safePage ? 'aria-current="page"' : ""} href="/admin?page=${number}${query ? `&q=${encodeURIComponent(query)}` : ""}">${number}</a>`; }).join("") : ""}</nav>`;
   return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Admin</title><style>
     :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px 32px 72px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label,.admin-link{color:var(--muted);font-size:12px}.admin-link{text-decoration:underline;text-underline-offset:3px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 42px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.chart-panel{margin-bottom:64px}.chart-tabs{display:flex;gap:8px;margin:15px 0}.chart-tabs button,.pages a{background:none;color:var(--muted);border:1px solid var(--line);padding:7px 10px;font:12px Arial;cursor:pointer;text-decoration:none}.chart-tabs button[aria-pressed="true"],.pages a[aria-current="page"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}.chart{height:170px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--line);padding-top:12px}.chart[hidden]{display:none}.bar{height:100%;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:end;gap:6px}.bar i{display:block;position:relative;height:var(--height);background:var(--accent);transform-origin:bottom;animation:bar-rise .58s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--index) * 18ms)}.bar i:hover::after{content:attr(data-value);position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--ink);color:var(--paper);font:11px Arial;white-space:nowrap;padding:6px 7px}.bar span{display:block;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-align:center}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}.search{display:flex}.search input{background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px;font:13px Arial}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}.pages{display:flex;gap:5px;margin-top:18px}.footer{margin-top:72px;color:var(--muted);font-size:12px}@keyframes bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){.bar i{animation:none}}@media(max-width:600px){body{padding:20px 20px 52px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:40px}.panel-head{display:block}.panel-head p{margin-top:8px}.search{margin-top:14px}table{font-size:12px}.panel th:nth-child(2),.panel td:nth-child(2){display:none}}
-  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section><section class="panel"><div class="panel-head"><div><h2>People connected to Lapped</h2></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID" autocomplete="off"></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section><footer class="footer">Lapped 2026</footer></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)});const search=document.querySelector('.search input');let searchTimer;search?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>search.form.submit(),280)})</script></body></html>`;
+  </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">Lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section>${manualPushPanel()}<section class="panel"><div class="panel-head"><div><h2>People connected to Lapped</h2></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID" autocomplete="off"></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section><footer class="footer">Lapped 2026</footer></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)});const search=document.querySelector('.search input');let searchTimer;search?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>search.form.submit(),280)})</script></body></html>`;
 }
 
 async function requireAdmin(req, res, next) {
@@ -810,6 +818,87 @@ async function scanActivity(req, activityId) {
   return scanActivityWithToken(token, activityId, req.session.strava.athlete?.id);
 }
 
+function parseStravaActivityUrl(value) {
+  const input = String(value || "").trim();
+  if (!input) return null;
+  let url;
+  try {
+    url = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`);
+  } catch {
+    return null;
+  }
+  if (!new Set(["www.strava.com", "strava.com"]).has(url.hostname.toLowerCase())) return null;
+  const match = url.pathname.match(/^\/activities\/(\d+)(?:\/.*)?$/);
+  return match?.[1] || null;
+}
+
+function athleteDisplayName(athlete) {
+  return [athlete?.firstname, athlete?.lastname].filter(Boolean).join(" ") || "Connected athlete";
+}
+
+function isRateLimitError(error) {
+  return Number(error?.status) === 429;
+}
+
+// This is intentionally sequential. A private activity can only be read with
+// its owner’s saved Strava token; stop as soon as it is identified and never
+// modify the connection records while probing.
+async function findConnectedActivity(activityId, tokens) {
+  for (const athleteId of Object.keys(tokens)) {
+    let token;
+    try {
+      token = await tokenForAthlete(athleteId);
+    } catch (error) {
+      console.error(`Manual ride check could not refresh athlete ${athleteId}:`, error.message);
+      continue;
+    }
+    let activity;
+    try {
+      activity = await strava(`/activities/${activityId}?include_all_efforts=true`, stravaHeaders(token));
+    } catch (error) {
+      if (isRateLimitError(error)) throw error;
+      continue;
+    }
+    const ownerId = String(activity.athlete?.id || "");
+    if (!ownerId) continue;
+    if (!tokens[ownerId]) return { status: "not-connected", activityId };
+    if (ownerId === String(athleteId)) return { status: "found", activityId, athleteId: ownerId, token, activity };
+
+    // A public ride may be visible through another athlete's token. Re-read it
+    // using the owner's token so an eventual write always uses that owner’s
+    // authorization, including when the activity later becomes private.
+    try {
+      const ownerToken = await tokenForAthlete(ownerId);
+      const ownerActivity = await strava(`/activities/${activityId}?include_all_efforts=true`, stravaHeaders(ownerToken));
+      return { status: "found", activityId, athleteId: ownerId, token: ownerToken, activity: ownerActivity };
+    } catch (error) {
+      if (isRateLimitError(error)) throw error;
+    }
+  }
+  return { status: "inaccessible", activityId };
+}
+
+async function reviewManualActivity(value, tokens) {
+  const activityId = parseStravaActivityUrl(value);
+  if (!activityId) return { status: "invalid", message: "Paste a valid Strava activity link." };
+  const match = await findConnectedActivity(activityId, tokens);
+  if (match.status === "not-connected") return { ...match, message: "This activity belongs to an athlete who is not connected to Lapped." };
+  if (match.status !== "found") return { ...match, message: "Lapped could not access this ride through any connected athlete. It may be private for an athlete who has not connected." };
+
+  const efforts = (match.activity.segment_efforts || []).filter(isTargetEffort);
+  const lapCount = efforts.length;
+  const athleteName = athleteDisplayName(tokens[match.athleteId]?.athlete || match.activity.athlete);
+  const fastestLap = formatFastestLap(efforts);
+  const alreadyProcessed = await activityWasProcessed(match.athleteId, activityId);
+  const alreadyDescribed = hasLappedReceipt(match.activity.description);
+  const details = `${athleteName} · ${lapCount} completed High Park lap${lapCount === 1 ? "" : "s"}${fastestLap ? ` · fastest lap ${fastestLap}` : ""}`;
+  if (alreadyProcessed || alreadyDescribed) {
+    return { ...match, status: "already", lapCount, fastestLap, message: `${details}. It already has a Lapped receipt, so nothing will be changed.` };
+  }
+  if (!lapCount) return { ...match, status: "no-laps", lapCount: 0, message: `${athleteName}'s ride has no completed High Park laps. Nothing will be changed.` };
+  return { ...match, status: "ready", lapCount, fastestLap, message: `${details}. Ready to push the standard Lapped receipt.` };
+}
+
 function processingRetryKey(athleteId, activityId) {
   return `${athleteId}:${activityId}`;
 }
@@ -841,8 +930,8 @@ function queueProcessingRetry(athleteId, activityId) {
   processingRetries.set(key, timer);
 }
 
-async function scanActivityWithToken(token, activityId, athleteId, { retryIfProcessing = false } = {}) {
-  const activity = await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
+async function scanActivityWithToken(token, activityId, athleteId, { retryIfProcessing = false, activity: loadedActivity = null } = {}) {
+  const activity = loadedActivity || await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
   if (await activityWasProcessed(athleteId, activityId)) {
@@ -970,7 +1059,7 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
     ]);
     const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
     const extras = ticketPanel(tickets);
-    res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}</body>`));
+    res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}${manualPushEnhancements}</body>`));
   } catch (error) { next(error); }
 });
 app.get("/admin/athletes", requireAdmin, (req, res) => {
@@ -998,18 +1087,47 @@ app.get("/admin/athletes/:athleteId/disconnect", requireAdmin, (req, res) => {
   const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "this athlete";
   res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Disconnect athlete — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}form{margin-top:30px;display:flex;gap:12px;align-items:center}button,a{font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none;cursor:pointer}a{background:transparent;color:#20201e}</style><main class="wrap"><h1>Disconnect ${escapeHtml(name)}?</h1><p>This removes only Strava athlete ${escapeHtml(athleteId)} from Lapped and revokes Lapped’s Strava authorization for that account. It does not affect any other connected athlete.</p><form method="post" action="/admin/athletes/${encodeURIComponent(athleteId)}/disconnect"><button type="submit">Disconnect athlete</button><a href="/admin">Cancel</a></form></main>`);
 });
-app.get("/admin/activities/:activityId/scan", requireAdmin, (req, res) => {
-  const activityId = String(req.params.activityId || "");
-  if (!/^\d+$/.test(activityId)) return res.status(400).send("Invalid activity ID.");
-  res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rescan activity — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}form{margin-top:30px;display:flex;gap:12px;align-items:center}button,a{font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none;cursor:pointer}a{background:transparent;color:#20201e}</style><main class="wrap"><h1>Rescan this ride?</h1><p>Lapped will check activity ${escapeHtml(activityId)} using the signed-in athlete’s Strava connection. If it has completed High Park laps and has not already been processed, it will add the usual Lapped description.</p><form method="post" action="/admin/activities/${encodeURIComponent(activityId)}/scan"><button type="submit">Rescan activity</button><a href="/admin">Cancel</a></form></main>`);
-});
-app.post("/admin/activities/:activityId/scan", requireAdmin, async (req, res, next) => {
+app.post("/admin/activity-review/check", requireAdmin, async (req, res, next) => {
   try {
-    const activityId = String(req.params.activityId || "");
-    if (!/^\d+$/.test(activityId)) return res.status(400).json({ error: "Invalid activity ID." });
-    const result = await scanActivity(req, activityId);
-    res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Activity rescanned — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}a{display:inline-block;margin-top:20px;font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none}</style><main class="wrap"><h1>${result.changed ? "Description added." : "Ride checked."}</h1><p>${result.lapCount ? `${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"} found.` : "No completed High Park laps found, so the description was left unchanged."}</p><a href="https://www.strava.com/activities/${encodeURIComponent(activityId)}">View ride on Strava</a></main>`);
-  } catch (error) { next(error); }
+    const review = await reviewManualActivity(req.body?.url, req.connectedTokens);
+    res.status(review.status === "invalid" ? 400 : 200).json({
+      status: review.status,
+      activityId: review.activityId || null,
+      lapCount: review.lapCount ?? null,
+      fastestLap: review.fastestLap || null,
+      message: review.message
+    });
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting checks. Wait a few minutes, then try again." });
+    next(error);
+  }
+});
+app.post("/admin/activity-review/apply", requireAdmin, async (req, res, next) => {
+  try {
+    const review = await reviewManualActivity(req.body?.url, req.connectedTokens);
+    if (review.status !== "ready") {
+      return res.status(review.status === "invalid" ? 400 : 200).json({
+        status: review.status,
+        activityId: review.activityId || null,
+        lapCount: review.lapCount ?? null,
+        fastestLap: review.fastestLap || null,
+        message: review.message
+      });
+    }
+    // Pass the just-read activity through to the normal scanner. This avoids a
+    // second Strava read after confirmation while retaining every existing
+    // duplicate-prevention and description-preservation rule.
+    const result = await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity });
+    await addCompletedActivityToLeaderboard(review.athleteId, review.activityId, result);
+    const status = result.changed ? "pushed" : "already";
+    const message = result.changed
+      ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt added.`
+      : "This ride already has a Lapped receipt, so nothing was changed.";
+    res.json({ status, activityId: review.activityId, lapCount: result.lapCount, fastestLap: review.fastestLap, message });
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting writes. Wait a few minutes, then try again." });
+    next(error);
+  }
 });
 app.post("/admin/athletes/:athleteId/disconnect", requireAdmin, async (req, res, next) => {
   try {
