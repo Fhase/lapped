@@ -366,12 +366,12 @@ function connectedAthletePage(tokens, page, query) {
   };
 }
 
-const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}.chart{align-items:stretch;padding:12px 0 0;margin-bottom:24px;overflow:visible}.bar{position:relative;display:block;height:100%}.bar i{position:absolute;left:0;right:0;bottom:0}.bar span{position:absolute;left:0;right:0;top:calc(100% + 5px)}</style><script>
+const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}.chart{align-items:stretch;padding:12px 0 0;margin-bottom:24px;overflow:visible}.bar{position:relative;display:block;height:100%}.bar i{position:absolute;left:0;right:0;bottom:0}.bar span{position:absolute;left:0;right:0;top:calc(100% + 5px)}.count{display:none}.metrics{grid-template-columns:repeat(3,1fr);margin-bottom:64px}.metric strong{font-family:Arial,Helvetica,sans-serif;font-weight:700}@media(max-width:600px){.metrics{grid-template-columns:repeat(3,1fr);margin-bottom:42px}.metric{padding:14px 10px}.metric strong{font-size:30px}.metric span{font-size:10px;margin-top:8px}}</style><script>
 document.querySelector('.search')?.remove();
 </script>`;
 
 function manualPushPanel() {
-  return `<style>.manual-push{margin:0 0 64px}.manual-push .panel-head{display:block}.manual-push .panel-head p{margin-top:7px;max-width:560px;line-height:1.45}.manual-push-form{display:flex;gap:8px;margin-top:18px}.manual-push input{min-width:0;flex:1;background:transparent;color:var(--ink);border:1px solid var(--line);padding:11px 12px;font:14px Arial}.manual-push button{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:11px 14px;font:13px Arial;cursor:pointer;white-space:nowrap}.manual-push button[disabled]{cursor:wait;opacity:.6}.manual-result{min-height:20px;margin:13px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.manual-result[data-state="ready"]{color:var(--ink)}.manual-confirm{margin-top:14px}.manual-confirm[hidden]{display:none}@media(max-width:600px){.manual-push-form{display:block}.manual-push input{width:100%}.manual-push-form button{width:100%;margin-top:8px}}</style><section class="panel manual-push" aria-labelledby="manual-push-title"><div class="panel-head"><h2 id="manual-push-title">Manual ride push</h2><p>Paste a Strava activity link to check a connected athlete’s ride. Nothing is written until you confirm.</p></div><form class="manual-push-form" id="manual-push-form"><input id="manual-push-url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.strava.com/activities/123…" required><button id="manual-push-check" type="submit">Check ride</button></form><div class="manual-result" id="manual-push-result" aria-live="polite"></div><button class="manual-confirm" id="manual-push-confirm" type="button" hidden>Push description</button></section>`;
+  return `<style>.manual-push{margin:0 0 64px}.manual-push .panel-head{display:block}.manual-push-form{display:flex;gap:8px;margin-top:18px}.manual-push input{min-width:0;flex:1;background:transparent;color:var(--ink);border:1px solid var(--line);padding:11px 12px;font:14px Arial}.manual-push button{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:11px 14px;font:13px Arial;cursor:pointer;white-space:nowrap}.manual-push button[disabled]{cursor:wait;opacity:.6}.manual-result{min-height:20px;margin:13px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.manual-result[data-state="ready"]{color:var(--ink)}.manual-confirm{margin-top:14px}.manual-confirm[hidden]{display:none}@media(max-width:600px){.manual-push-form{display:block}.manual-push input{width:100%}.manual-push-form button{width:100%;margin-top:8px}}</style><section class="panel manual-push" aria-labelledby="manual-push-title"><div class="panel-head"><h2 id="manual-push-title">Manual ride push</h2></div><form class="manual-push-form" id="manual-push-form"><input id="manual-push-url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.strava.com/activities/123…" required><button id="manual-push-check" type="submit">Check ride</button></form><div class="manual-result" id="manual-push-result" aria-live="polite"></div><button class="manual-confirm" id="manual-push-confirm" type="button" hidden>Push description</button></section>`;
 }
 
 const manualPushEnhancements = `<script>
@@ -1057,7 +1057,10 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
       readEncryptedStore(analyticsStore),
       readEncryptedStore(featureRequestsStore)
     ]);
-    const pageHtml = adminPage(req.connectedTokens, analytics, { page, query });
+    const pageHtml = adminPage(req.connectedTokens, analytics, { page, query }).replace(
+      '<section class="metrics">',
+      `<section class="metrics"><div class="metric"><strong>${Object.keys(req.connectedTokens).length}</strong><span>connected athletes</span></div>`
+    );
     const extras = ticketPanel(tickets);
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}${manualPushEnhancements}</body>`));
   } catch (error) { next(error); }
