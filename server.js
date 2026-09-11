@@ -23,6 +23,7 @@ const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
 const featureRequestsStore = path.join(dataDir, "feature-requests.json");
+const waitlistStore = path.join(dataDir, "waitlist.json");
 // Retained only long enough to clear the retired leaderboard cache on deploy.
 // It never contains tokens and clearing it never changes a connection.
 const legacyLeaderboardStore = path.join(dataDir, "leaderboard.json");
@@ -42,6 +43,7 @@ const oauthWindowMs = 10 * 60 * 1000;
 const oauthRequestsByIp = new Map();
 const featureRequestWindowMs = 60 * 60 * 1000;
 const featureRequestSubmissions = new Map();
+const waitlistSubmissions = new Map();
 // Strava can announce a freshly uploaded activity before its segment efforts
 // have finished processing. Keep one short, in-memory retry per activity so an
 // import is not missed, without doubling scans for title edits or every webhook.
@@ -215,6 +217,17 @@ async function saveFeatureRequest(text) {
   return request;
 }
 
+async function saveWaitlistLead({ name, email, stravaUrl }) {
+  const stored = await readEncryptedStore(waitlistStore);
+  const leads = Array.isArray(stored) ? stored : [];
+  const existing = leads.find((lead) => String(lead.email || "").toLowerCase() === email.toLowerCase());
+  if (existing) return { lead: existing, existing: true };
+  const lead = { id: crypto.randomUUID(), name, email, stravaUrl, created_at: new Date().toISOString(), status: "new" };
+  leads.unshift(lead);
+  await writeEncryptedStore(waitlistStore, leads.slice(0, 1000));
+  return { lead, existing: false };
+}
+
 function featureRequestKey(req) {
   // A memory-only keyed hash limits spam without retaining a raw IP address.
   return crypto.createHmac("sha256", sessionSecret).update(String(req.ip || "unknown")).digest("hex");
@@ -228,6 +241,17 @@ function canSubmitFeatureRequest(req) {
   const key = featureRequestKey(req);
   if (featureRequestSubmissions.has(key)) return false;
   featureRequestSubmissions.set(key, now);
+  return true;
+}
+
+function canSubmitWaitlist(req) {
+  const now = Date.now();
+  for (const [key, submittedAt] of waitlistSubmissions) {
+    if (now - submittedAt >= featureRequestWindowMs) waitlistSubmissions.delete(key);
+  }
+  const key = featureRequestKey(req);
+  if (waitlistSubmissions.has(key)) return false;
+  waitlistSubmissions.set(key, now);
   return true;
 }
 
@@ -407,6 +431,17 @@ function ticketPanel(stored) {
   const open = requests.filter((request) => request.status !== "archive").slice(0, 50);
   const archived = requests.filter((request) => request.status === "archive").slice(0, 50);
   return `<style>.tickets{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.tickets h2{font-size:15px;margin:0 0 18px}.ticket{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding:16px 0}.ticket p{margin:0 0 8px;font-size:14px;line-height:1.45}.ticket small,.ticket-empty,.archived-folder summary{color:var(--muted);font-size:12px}.ticket-actions{display:flex;gap:6px;align-self:start}.ticket-actions button{background:transparent;color:var(--muted);border:1px solid var(--line);padding:6px 7px;font:11px Arial;cursor:pointer}.ticket-actions button:last-child{color:var(--accent)}.archived-folder{margin-top:16px;border-top:1px solid var(--line)}.archived-folder summary{cursor:pointer;padding:14px 0;list-style:none}.archived-folder summary::before{content:"+";display:inline-block;width:15px}.archived-folder[open] summary::before{content:"−"}@media(max-width:600px){.ticket{display:block}.ticket-actions{margin-top:12px}}</style><section class="tickets"><h2>Feature requests</h2>${open.map((request) => renderTicket(request)).join("") || "<p class=\"ticket-empty\">No feature requests yet.</p>"}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((request) => renderTicket(request, true)).join("")}</details>` : ""}</section><script>document.querySelectorAll('[data-ticket-action]').forEach(button=>button.onclick=async()=>{const ticket=button.closest('[data-ticket-id]'),action=button.dataset.ticketAction;const response=await fetch('/admin/tickets/'+ticket.dataset.ticketId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){ticket.remove()}})</script>`;
+}
+
+function waitlistPanel(stored) {
+  const leads = (Array.isArray(stored) ? stored : []).filter((lead) => lead.status !== "archive").slice(0, 100);
+  const archived = (Array.isArray(stored) ? stored : []).filter((lead) => lead.status === "archive").slice(0, 100);
+  const renderLead = (lead, isArchived = false) => `<article class="ticket waitlist-lead" data-waitlist-id="${escapeHtml(lead.id)}"><div><p><strong>${escapeHtml(lead.name)}</strong> · <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a>${lead.stravaUrl ? ` · <a href="${escapeHtml(lead.stravaUrl)}" target="_blank" rel="noreferrer">Strava</a>` : ""}</p><small>${escapeHtml(formatJoinedAt(lead.created_at))}</small></div><div class="ticket-actions">${isArchived ? "" : '<button data-waitlist-action="archive">archive</button>'}<button data-waitlist-action="delete">delete</button></div></article>`;
+  return `<section class="tickets waitlist"><h2>Waitlist</h2>${leads.map((lead) => renderLead(lead)).join("") || '<p class="ticket-empty">No waitlist leads yet.</p>'}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((lead) => renderLead(lead, true)).join("")}</details>` : ""}</section><script>document.querySelectorAll('[data-waitlist-action]').forEach(button=>button.onclick=async()=>{const lead=button.closest('[data-waitlist-id]'),action=button.dataset.waitlistAction;const response=await fetch('/admin/waitlist/'+lead.dataset.waitlistId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){lead.remove()}})</script>`;
+}
+
+function waitlistPage() {
+  return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lapped — Waitlist</title><meta name="description" content="Join the Lapped waitlist."><link rel="canonical" href="https://lapped.fit/waitlist"><link rel="stylesheet" href="/styles.css"><style>.waitlist-page{max-width:650px;padding:112px 0 62px}.waitlist-page h1{font-size:clamp(56px,9vw,96px);margin-bottom:30px}.waitlist-page>p{max-width:510px;color:var(--muted);font-size:17px;line-height:1.45;margin:0 0 42px}.waitlist-form{display:grid;gap:18px;border-top:1px solid var(--ink);padding-top:24px}.waitlist-form label{display:grid;gap:7px;font-size:13px;color:var(--muted)}.waitlist-form input{width:100%;background:transparent;border:1px solid color-mix(in srgb,var(--ink) 45%,transparent);color:var(--ink);padding:13px;font:16px Manrope,Arial,sans-serif}.waitlist-form button{justify-self:start;margin-top:4px}.waitlist-form p{min-height:22px;color:var(--muted);font-size:14px;margin:0}.waitlist-note{font-size:12px!important;line-height:1.5!important;margin:0!important}.waitlist-note a{color:var(--ink);text-underline-offset:3px}</style></head><body><main><nav><a class="wordmark" href="/">Lapped</a><div class="nav-right"><a class="github-link" href="/">back to Lapped</a></div></nav><section class="waitlist-page"><h1>On the list.</h1><p>We’re waiting for Strava to open more Lapped spots. Leave your details and we’ll reach out when you can connect.</p><form class="waitlist-form" id="waitlist-form"><label>name<input name="name" autocomplete="name" maxlength="80" required></label><label>email<input name="email" type="email" autocomplete="email" maxlength="254" required></label><label>Strava profile or activity link <small>optional</small><input name="stravaUrl" type="url" inputmode="url" maxlength="500" placeholder="https://www.strava.com/athletes/..." ></label><button type="submit">Join the waitlist</button><p id="waitlist-status" aria-live="polite"></p><p class="waitlist-note">We use these details only to notify you when Lapped has space. Read the <a href="/privacy.html">privacy policy</a>.</p></form></section></main><script>const form=document.querySelector('#waitlist-form'),status=document.querySelector('#waitlist-status');form.addEventListener('submit',async event=>{event.preventDefault();const button=form.querySelector('button');button.disabled=true;status.textContent='Saving…';try{const values=Object.fromEntries(new FormData(form));const response=await fetch('/api/waitlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(values)});const body=await response.json();if(!response.ok)throw new Error(body.error||'Could not join right now.');form.reset();status.textContent=body.existing?'You’re already on the list.':'You’re on the list — we’ll be in touch.'}catch(error){status.textContent=error.message}finally{button.disabled=false}})</script></body></html>`;
 }
 
 function rankingPanel(rankings) {
@@ -1063,6 +1098,26 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.get("/waitlist", (_req, res) => res.type("html").send(waitlistPage()));
+app.post("/api/waitlist", async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim().replace(/\s+/g, " ");
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const rawStravaUrl = String(req.body?.stravaUrl || "").trim();
+    if (name.length < 2 || name.length > 80) return res.status(400).json({ error: "Please enter your name." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return res.status(400).json({ error: "Please enter a valid email." });
+    let stravaUrl = "";
+    if (rawStravaUrl) {
+      let parsed;
+      try { parsed = new URL(rawStravaUrl); } catch { return res.status(400).json({ error: "Please use a valid Strava link, or leave it blank." }); }
+      if (!/^https:$/.test(parsed.protocol) || !(/(^|\.)strava\.com$/.test(parsed.hostname) || parsed.hostname === "strava.app.link")) return res.status(400).json({ error: "Please use a Strava link, or leave it blank." });
+      stravaUrl = parsed.toString();
+    }
+    if (!canSubmitWaitlist(req)) return res.status(429).json({ error: "You’re already on the list, or please try again in an hour." });
+    const saved = await saveWaitlistLead({ name, email, stravaUrl });
+    res.status(saved.existing ? 200 : 201).json({ ok: true, existing: saved.existing });
+  } catch (error) { next(error); }
+});
 app.get("/account/data", async (req, res, next) => {
   try {
     const athleteId = String(req.session.strava?.athlete?.id || "");
@@ -1097,15 +1152,16 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
     const query = String(req.query.q || "").slice(0, 80);
-    const [analytics, tickets] = await Promise.all([
+    const [analytics, tickets, waitlist] = await Promise.all([
       readEncryptedStore(analyticsStore),
-      readEncryptedStore(featureRequestsStore)
+      readEncryptedStore(featureRequestsStore),
+      readEncryptedStore(waitlistStore)
     ]);
     const pageHtml = adminPage(req.connectedTokens, analytics, { page, query }).replace(
       '<section class="metrics">',
       `<section class="metrics"><div class="metric"><strong>${Object.keys(req.connectedTokens).length}</strong><span>connected athletes</span></div>`
     );
-    const extras = ticketPanel(tickets);
+    const extras = `${waitlistPanel(waitlist)}${ticketPanel(tickets)}`;
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}${manualPushEnhancements}</body>`));
   } catch (error) { next(error); }
 });
@@ -1192,6 +1248,20 @@ app.post("/admin/tickets/:id", requireAdmin, async (req, res, next) => {
     if (action === "delete") requests.splice(index, 1);
     else requests[index].status = action;
     await writeEncryptedStore(featureRequestsStore, requests);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.post("/admin/waitlist/:id", requireAdmin, async (req, res, next) => {
+  try {
+    const action = String(req.body?.action || "");
+    if (!new Set(["archive", "delete"]).has(action)) return res.status(400).json({ error: "Invalid action." });
+    const stored = await readEncryptedStore(waitlistStore);
+    const leads = Array.isArray(stored) ? stored : [];
+    const index = leads.findIndex((lead) => lead.id === req.params.id);
+    if (index === -1) return res.sendStatus(404);
+    if (action === "delete") leads.splice(index, 1);
+    else leads[index].status = action;
+    await writeEncryptedStore(waitlistStore, leads);
     res.json({ ok: true });
   } catch (error) { next(error); }
 });
