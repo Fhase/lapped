@@ -58,10 +58,7 @@
         <h2 id="athlete-name"></h2>
       </div>
       <div class="actions">
-        <form id="connect-form" action="/auth/strava" method="get">
-          <label class="consent-box" id="consent-box"><input id="privacy-consent" name="consent" value="yes" type="checkbox" required> <span>I agree to lapped’s <a href="/privacy.html">data use and privacy policy</a> and <a href="/terms.html">terms</a>.</span></label>
-          <button class="button" id="connect" type="submit" disabled>Connect with Strava</button>
-        </form>
+        <div id="connect-form"><a class="button" id="connect" href="/waitlist">Connect with Strava</a></div>
         <button class="button" id="disconnect" hidden>Disconnect Strava</button>
       </div>
     </section>

@@ -4,7 +4,7 @@ const connect = document.querySelector("#connect"), disconnect = document.queryS
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
-const connectForm = document.querySelector("#connect-form"), consentBox = document.querySelector("#consent-box"), privacyConsent = document.querySelector("#privacy-consent");
+const connectForm = document.querySelector("#connect-form");
 
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -16,10 +16,6 @@ themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);
 };
-privacyConsent?.addEventListener("change", () => { connect.disabled = !privacyConsent.checked; });
-connectForm?.addEventListener("submit", (event) => {
-  if (!privacyConsent?.checked) event.preventDefault();
-});
 fetch("/api/status").then((r) => r.json()).then((data) => {
   if (!data.configured) { connect.textContent = "Configure .env first"; connect.disabled = true; return; }
   if (!data.connected) return;
@@ -30,7 +26,6 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   descriptionExample.hidden = true;
   lapLink.hidden = true;
   connectForm.hidden = true;
-  consentBox.hidden = true;
   disconnect.hidden = false;
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => {
