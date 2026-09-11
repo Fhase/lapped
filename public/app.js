@@ -4,6 +4,7 @@ const connect = document.querySelector("#connect"), disconnect = document.queryS
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
+const connectForm = document.querySelector("#connect-form"), consentBox = document.querySelector("#consent-box"), privacyConsent = document.querySelector("#privacy-consent");
 
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -15,8 +16,12 @@ themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);
 };
+privacyConsent?.addEventListener("change", () => { connect.disabled = !privacyConsent.checked; });
+connectForm?.addEventListener("submit", (event) => {
+  if (!privacyConsent?.checked) event.preventDefault();
+});
 fetch("/api/status").then((r) => r.json()).then((data) => {
-  if (!data.configured) { connect.textContent = "Configure .env first"; connect.removeAttribute("href"); return; }
+  if (!data.configured) { connect.textContent = "Configure .env first"; connect.disabled = true; return; }
   if (!data.connected) return;
   const name = [data.athlete?.firstname, data.athlete?.lastname].filter(Boolean).join(" ");
   athleteName.textContent = name || "Your laps";
@@ -24,7 +29,8 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectedOverview.hidden = false;
   descriptionExample.hidden = true;
   lapLink.hidden = true;
-  connect.hidden = true;
+  connectForm.hidden = true;
+  consentBox.hidden = true;
   disconnect.hidden = false;
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => {
@@ -34,7 +40,7 @@ disconnect.onclick = async () => {
 const featureRequestForm = document.querySelector("#feature-request-form"), featureRequestStatus = document.querySelector("#feature-request-status");
 featureRequestForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const button = featureRequestForm.querySelector("button"), request = new FormData(featureRequestForm).get("request")?.trim();
+  const button = featureRequestForm.querySelector("button"), formData = new FormData(featureRequestForm), request = formData.get("request")?.trim();
   if (!request) return;
   button.disabled = true;
   try {
