@@ -44,7 +44,7 @@ h2{font-size:32px;line-height:.95;letter-spacing:-.055em;margin:0 0 13px}
 .actions{display:flex;align-items:flex-end;flex-direction:column;gap:13px}
 .actions form{display:flex;flex-direction:column;align-items:flex-end;gap:11px}.consent-detail{font-size:12px!important;line-height:1.4!important;text-align:right}.consent-box{display:flex;align-items:center;gap:6px;width:max-content;max-width:none;color:var(--muted);font-size:12px;line-height:1.35;text-align:right;white-space:nowrap}.consent-box input{appearance:none;flex:0 0 auto;width:16px;height:16px;margin:0;border:1px solid var(--muted);background:transparent;cursor:pointer}.consent-box input:checked{background:var(--ink);box-shadow:inset 0 0 0 4px var(--paper)}.consent-box a{color:var(--ink);text-underline-offset:3px}.button:disabled{opacity:.45;cursor:not-allowed}
 .button,button{background:var(--ink);border:0;color:var(--paper);font:500 15px Arial,Helvetica,sans-serif;letter-spacing:-.02em;padding:14px 16px;text-decoration:none;cursor:pointer}
-.button{display:inline-flex;align-items:center;gap:12px;min-width:220px;min-height:52px}
+.button{display:inline-flex;align-items:center;justify-content:center;gap:12px;min-width:220px;min-height:52px}
 .button[hidden]{display:none}
 .button .strava-mark{width:19px;height:19px;object-fit:contain;flex:0 0 auto}
 .button>span:not(.button-label){margin-left:auto;font-size:19px}
