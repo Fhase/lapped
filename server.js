@@ -818,7 +818,13 @@ async function scanActivity(req, activityId) {
   return scanActivityWithToken(token, activityId, req.session.strava.athlete?.id);
 }
 
-function parseStravaActivityUrl(value) {
+function activityIdFromStravaUrl(url) {
+  if (!new Set(["www.strava.com", "strava.com"]).has(url.hostname.toLowerCase())) return null;
+  const match = url.pathname.match(/^\/activities\/(\d+)(?:\/.*)?$/);
+  return match?.[1] || null;
+}
+
+async function parseStravaActivityUrl(value) {
   const input = String(value || "").trim();
   if (!input) return null;
   let url;
@@ -827,9 +833,40 @@ function parseStravaActivityUrl(value) {
   } catch {
     return null;
   }
-  if (!new Set(["www.strava.com", "strava.com"]).has(url.hostname.toLowerCase())) return null;
-  const match = url.pathname.match(/^\/activities\/(\d+)(?:\/.*)?$/);
-  return match?.[1] || null;
+  const directActivityId = activityIdFromStravaUrl(url);
+  if (directActivityId) return directActivityId;
+  if (!new Set(["strava.app.link", "www.strava.app.link"]).has(url.hostname.toLowerCase())) return null;
+
+  // iOS shares Strava's Branch-style app links, which open the native app on
+  // the phone. Resolve only through Strava-owned hosts so this admin-only
+  // convenience cannot become an arbitrary server-side URL fetch.
+  let nextUrl = url;
+  const allowedHosts = new Set(["strava.app.link", "www.strava.app.link", "strava.com", "www.strava.com"]);
+  for (let hop = 0; hop < 5; hop += 1) {
+    let response;
+    try {
+      response = await fetch(nextUrl, {
+        redirect: "manual",
+        headers: { "user-agent": "Lapped activity checker/1.0" }
+      });
+    } catch {
+      return null;
+    }
+    const location = response.headers.get("location");
+    if (location && response.status >= 300 && response.status < 400) {
+      const redirected = new URL(location, nextUrl);
+      if (!allowedHosts.has(redirected.hostname.toLowerCase())) return null;
+      const activityId = activityIdFromStravaUrl(redirected);
+      if (activityId) return activityId;
+      nextUrl = redirected;
+      continue;
+    }
+    if (!response.ok) return null;
+    const page = await response.text();
+    const activityMatch = page.match(/https?:\/\/(?:www\.)?strava\.com\/activities\/(\d+)/i);
+    return activityMatch?.[1] || null;
+  }
+  return null;
 }
 
 function athleteDisplayName(athlete) {
@@ -879,8 +916,8 @@ async function findConnectedActivity(activityId, tokens) {
 }
 
 async function reviewManualActivity(value, tokens) {
-  const activityId = parseStravaActivityUrl(value);
-  if (!activityId) return { status: "invalid", message: "Paste a valid Strava activity link." };
+  const activityId = await parseStravaActivityUrl(value);
+  if (!activityId) return { status: "invalid", message: "Paste a valid Strava activity or Strava app link." };
   const match = await findConnectedActivity(activityId, tokens);
   if (match.status === "not-connected") return { ...match, message: "This activity belongs to an athlete who is not connected to Lapped." };
   if (match.status !== "found") return { ...match, message: "Lapped could not access this ride through any connected athlete. It may be private for an athlete who has not connected." };
