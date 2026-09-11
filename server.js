@@ -998,6 +998,19 @@ app.get("/admin/athletes/:athleteId/disconnect", requireAdmin, (req, res) => {
   const name = [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || "this athlete";
   res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Disconnect athlete — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}form{margin-top:30px;display:flex;gap:12px;align-items:center}button,a{font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none;cursor:pointer}a{background:transparent;color:#20201e}</style><main class="wrap"><h1>Disconnect ${escapeHtml(name)}?</h1><p>This removes only Strava athlete ${escapeHtml(athleteId)} from Lapped and revokes Lapped’s Strava authorization for that account. It does not affect any other connected athlete.</p><form method="post" action="/admin/athletes/${encodeURIComponent(athleteId)}/disconnect"><button type="submit">Disconnect athlete</button><a href="/admin">Cancel</a></form></main>`);
 });
+app.get("/admin/activities/:activityId/scan", requireAdmin, (req, res) => {
+  const activityId = String(req.params.activityId || "");
+  if (!/^\d+$/.test(activityId)) return res.status(400).send("Invalid activity ID.");
+  res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rescan activity — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}form{margin-top:30px;display:flex;gap:12px;align-items:center}button,a{font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none;cursor:pointer}a{background:transparent;color:#20201e}</style><main class="wrap"><h1>Rescan this ride?</h1><p>Lapped will check activity ${escapeHtml(activityId)} using the signed-in athlete’s Strava connection. If it has completed High Park laps and has not already been processed, it will add the usual Lapped description.</p><form method="post" action="/admin/activities/${encodeURIComponent(activityId)}/scan"><button type="submit">Rescan activity</button><a href="/admin">Cancel</a></form></main>`);
+});
+app.post("/admin/activities/:activityId/scan", requireAdmin, async (req, res, next) => {
+  try {
+    const activityId = String(req.params.activityId || "");
+    if (!/^\d+$/.test(activityId)) return res.status(400).json({ error: "Invalid activity ID." });
+    const result = await scanActivity(req, activityId);
+    res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Activity rescanned — Lapped</title><style>body{margin:0;background:#f3f0ea;color:#20201e;font:16px Arial,sans-serif;padding:48px 24px}.wrap{max-width:520px;margin:auto}h1{font:400 42px Georgia,serif;margin:0 0 18px}p{line-height:1.55;color:#6f6b65}a{display:inline-block;margin-top:20px;font:14px Arial;padding:11px 14px;border:1px solid #20201e;background:#20201e;color:#f3f0ea;text-decoration:none}</style><main class="wrap"><h1>${result.changed ? "Description added." : "Ride checked."}</h1><p>${result.lapCount ? `${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"} found.` : "No completed High Park laps found, so the description was left unchanged."}</p><a href="https://www.strava.com/activities/${encodeURIComponent(activityId)}">View ride on Strava</a></main>`);
+  } catch (error) { next(error); }
+});
 app.post("/admin/athletes/:athleteId/disconnect", requireAdmin, async (req, res, next) => {
   try {
     const athleteId = String(req.params.athleteId || "");
