@@ -16,15 +16,19 @@ If an activity has no completed effort for the configured High Park segment, Lap
 2. Strava sends Lapped an activity webhook after upload or update.
 3. Lapped reads that rider's activity, counts efforts on the configured segment, and writes the receipt only when there is at least one match.
 
+Lapped is intentionally a personal utility: it does not provide public leaderboards, cross-athlete rankings, or historical activity archives.
+
 The included Chrome extension is optional. It lets a rider manually rescan an existing Strava activity.
 
 ## Privacy and security
 
 - Lapped requests Strava's `activity:read_all` and `activity:write` scopes. Those permissions are needed to inspect segment efforts and write the receipt to the rider's own activity description.
 - Connected-athlete tokens are stored on the service's persistent disk encrypted with AES-256-GCM. The encryption key and all Strava credentials live only in environment variables, never in this repository.
+- Athlete ID, display name, connection time, and encrypted tokens are retained only while a rider remains connected. The duplicate-prevention cache is pruned within seven days; activity and segment-effort history are not retained.
+- Riders can view the account data Lapped retains at `/account/data` while connected, and can request correction or deletion through the privacy route described on the site.
 - `data/`, `.env`, deployment keys, and dependency folders are excluded from Git.
 - The owner dashboard is protected by Strava authentication, an owner-only athlete check, and a signed, HttpOnly, secure cookie. It is not a hidden public page.
-- Riders can revoke access at any time from their Strava account settings.
+- Riders can revoke access at any time from Lapped or their Strava account settings. Revocation removes their authorization and stored operational records.
 
 No web service can honestly promise to be unhackable. Keep the deployment platform and GitHub account protected with strong, unique passwords and two-factor authentication; rotate credentials promptly if there is any concern they were exposed.
 

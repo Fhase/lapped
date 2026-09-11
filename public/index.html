@@ -26,7 +26,7 @@
   <main>
     <nav>
       <a class="wordmark" href="/">Lapped</a>
-      <div class="nav-right"><a class="github-link" href="/leaderboard">Leaderboard</a><a class="github-link" href="https://github.com/Fhase/lapped" target="_blank" rel="noreferrer">GitHub</a><span id="theme-label">light mode</span><label class="theme-toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode" checked /><span class="toggle-track"><i></i></span></label></div>
+      <div class="nav-right"><a class="github-link" href="https://github.com/Fhase/lapped" target="_blank" rel="noreferrer">GitHub</a><span id="theme-label">light mode</span><label class="theme-toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode" checked /><span class="toggle-track"><i></i></span></label></div>
     </nav>
     <section class="intro">
       <div class="copy">
@@ -58,8 +58,11 @@
         <h2 id="athlete-name"></h2>
       </div>
       <div class="actions">
-        <a class="button" id="connect" href="/auth/strava">Connect Strava <img class="strava-mark" src="/strava-mark.png" alt="" aria-hidden="true" /><span>→</span></a>
-        <button class="button" id="disconnect" hidden><span class="button-label">Disconnect Strava</span><img class="strava-mark" src="/strava-mark.png" alt="" aria-hidden="true" /></button>
+        <form id="connect-form" action="/auth/strava" method="get">
+          <label class="consent-box" id="consent-box"><input id="privacy-consent" name="consent" value="yes" type="checkbox" required> <span>I agree to lapped’s <a href="/privacy.html">data use and privacy policy</a> and <a href="/terms.html">terms</a>.</span></label>
+          <button class="button" id="connect" type="submit" disabled>Connect with Strava</button>
+        </form>
+        <button class="button" id="disconnect" hidden>Disconnect Strava</button>
       </div>
     </section>
     <section class="notes" id="description-example">
