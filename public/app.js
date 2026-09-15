@@ -66,8 +66,13 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     }
     if (stats.status !== "ready") {
       if (stats.ytdPartial !== null) {
-        ytdLaps.textContent = `${Number(stats.ytdPartial).toLocaleString()}+`;
-        ytdKm.textContent = formatKm(stats.ytdPartial, true);
+        if (Number(stats.ytdPartial) > 0) {
+          ytdLaps.textContent = `${Number(stats.ytdPartial).toLocaleString()}+`;
+          ytdKm.textContent = formatKm(stats.ytdPartial, true);
+        } else {
+          ytdLaps.textContent = "—";
+          ytdKm.textContent = "—";
+        }
       }
       lapStatsStatus.textContent = "Your lap stats are loading slowly in the background. Come back in a while.";
       return;
