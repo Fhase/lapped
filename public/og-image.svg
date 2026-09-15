@@ -1,16 +1,16 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1200" height="630" fill="#191A18"/>
-  <rect x="736" y="55" width="372" height="520" fill="#30372D"/>
-  <path d="M825 145C884 85 994 63 1062 126M813 484C885 557 1009 569 1077 498" stroke="#596052" stroke-width="2" stroke-linecap="round"/>
+  <rect width="1200" height="630" fill="#F3F0EA"/>
+  <rect x="736" y="55" width="372" height="520" fill="#DCDFCF"/>
+  <path d="M825 145C884 85 994 63 1062 126M813 484C885 557 1009 569 1077 498" stroke="#B5BBAC" stroke-width="2" stroke-linecap="round"/>
   <g transform="translate(763 58) scale(.66)">
-    <path d="M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z" stroke="#F2EEE7" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z" stroke="#20201E" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="286" cy="55" r="14" fill="#FC4C02"/>
     <circle cx="77" cy="330" r="14" fill="#FC4C02"/>
     <circle cx="91" cy="400" r="14" fill="#FC4C02"/>
     <circle cx="99" cy="444" r="14" fill="#FC4C02"/>
   </g>
-  <text x="92" y="113" fill="#F2EEE7" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" letter-spacing="-2">Lapped</text>
-  <text x="92" y="290" fill="#F2EEE7" font-family="Georgia, 'Times New Roman', serif" font-size="105" font-weight="400" letter-spacing="-8">Count your</text>
-  <text x="92" y="395" fill="#F2EEE7" font-family="Georgia, 'Times New Roman', serif" font-size="105" font-weight="400" letter-spacing="-8">laps.</text>
-  <text x="92" y="494" fill="#AAA69E" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="-1">high park laps</text>
+  <text x="92" y="113" fill="#20201E" font-family="Arial, Helvetica, sans-serif" font-size="29" font-weight="700" letter-spacing="-2">Lapped</text>
+  <text x="92" y="290" fill="#20201E" font-family="Georgia, 'Times New Roman', serif" font-size="105" font-weight="400" letter-spacing="-8">Count your</text>
+  <text x="92" y="395" fill="#20201E" font-family="Georgia, 'Times New Roman', serif" font-size="105" font-weight="400" letter-spacing="-8">laps.</text>
+  <text x="92" y="494" fill="#6F6B65" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="-1">high park laps</text>
 </svg>
