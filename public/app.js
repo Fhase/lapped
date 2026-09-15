@@ -37,6 +37,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   consentBox.hidden = true;
   disconnect.hidden = false;
   connectedOverview.classList.add("stats-loading");
+  [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.add("stat-loading"));
   if (localPreview) {
     disconnect.hidden = true;
     lifetimeLaps.textContent = "2,043";
@@ -46,6 +47,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     lifetimeKm.textContent = formatKm(2043);
     ytdKm.textContent = formatKm(756);
     lapStatsStatus.textContent = "staging preview · example stats";
+    [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading"));
     connectedOverview.classList.remove("stats-loading");
     return;
   }
@@ -54,11 +56,13 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     if (stats.lifetime !== null) {
       lifetimeLaps.textContent = Number(stats.lifetime).toLocaleString();
       lifetimeKm.textContent = formatKm(stats.lifetime);
+      lifetimeLaps.classList.remove("stat-loading");
     }
     if (stats.fastestLap) {
       const [time, speed] = String(stats.fastestLap).split(" · ");
       fastestLap.textContent = time || "—";
       fastestSpeed.textContent = speed || "—";
+      fastestLap.classList.remove("stat-loading");
     }
     if (stats.status !== "ready") {
       if (stats.ytdPartial !== null) {
@@ -72,10 +76,13 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     lifetimeLaps.textContent = stats.lifetime ?? "—";
     ytdLaps.textContent = stats.ytd === null ? "—" : Number(stats.ytd).toLocaleString();
     ytdKm.textContent = stats.ytd === null ? "—" : formatKm(stats.ytd);
+    ytdLaps.classList.remove("stat-loading");
+    lifetimeLaps.classList.remove("stat-loading");
+    fastestLap.classList.remove("stat-loading");
     fastestLap.textContent = stats.fastestLap ? String(stats.fastestLap).split(" · ")[0] : "—";
     fastestSpeed.textContent = stats.fastestLap ? (String(stats.fastestLap).split(" · ")[1] || "—") : "—";
     lapStatsStatus.textContent = "Updated from your private Strava segment history.";
-  }).catch(() => { lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
+  }).catch(() => { [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading")); connectedOverview.classList.remove("stats-loading"); lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => {
   disconnect.disabled = true;
