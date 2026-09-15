@@ -865,6 +865,79 @@ function formatFastestLap(efforts) {
   return `${minutes}:${remainder} · ${speedKmh} km/h`;
 }
 
+function bestRollingPower(timeValues, wattValues, durationSeconds) {
+  if (!Array.isArray(timeValues) || !Array.isArray(wattValues) || timeValues.length !== wattValues.length) return null;
+  const samples = [];
+  for (let index = 0; index < timeValues.length; index += 1) {
+    const time = Number(timeValues[index]);
+    if (!Number.isFinite(time)) continue;
+    const watts = Number(wattValues[index]);
+    const sample = { time, watts: Number.isFinite(watts) && watts >= 0 ? watts : 0 };
+    if (samples.at(-1)?.time === time) samples[samples.length - 1] = sample;
+    else if (!samples.length || time > samples.at(-1).time) samples.push(sample);
+  }
+  const lastTime = samples.at(-1)?.time;
+  if (samples.length < 2 || lastTime - samples[0].time < durationSeconds) return null;
+
+  const joules = [0];
+  for (let index = 0; index < samples.length - 1; index += 1) {
+    joules.push(joules[index] + (samples[index + 1].time - samples[index].time) * samples[index].watts);
+  }
+  const energyAt = (time) => {
+    let low = 0;
+    let high = samples.length - 1;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (samples[mid].time <= time) low = mid + 1;
+      else high = mid - 1;
+    }
+    const index = Math.max(0, Math.min(high, samples.length - 2));
+    return joules[index] + (time - samples[index].time) * samples[index].watts;
+  };
+  const starts = new Set();
+  for (const { time } of samples) {
+    if (time <= lastTime - durationSeconds) starts.add(time);
+    if (time - durationSeconds >= samples[0].time) starts.add(time - durationSeconds);
+  }
+  let best = null;
+  for (const start of starts) {
+    const average = (energyAt(start + durationSeconds) - energyAt(start)) / durationSeconds;
+    if (best === null || average > best) best = average;
+  }
+  return best;
+}
+
+async function manualRidePowerLines(token, activityId) {
+  try {
+    const [streams, athlete] = await Promise.all([
+      strava(`/activities/${activityId}/streams?keys=time,watts&key_by_type=true&resolution=high`, stravaHeaders(token)),
+      strava("/athlete", stravaHeaders(token))
+    ]);
+    const weightKg = Number(athlete?.weight);
+    const timeValues = streams?.time?.data;
+    const wattValues = streams?.watts?.data;
+    if (!Number.isFinite(weightKg) || weightKg <= 0 || !Array.isArray(wattValues)) return [];
+    return [[60, "1 min"], [300, "5 min"], [1200, "20 min"]]
+      .map(([duration, label]) => {
+        const watts = bestRollingPower(timeValues, wattValues, duration);
+        if (!Number.isFinite(watts)) return null;
+        const roundedWatts = Math.round(watts);
+        return `${label} power · ${roundedWatts} w · ${(roundedWatts / weightKg).toFixed(1)} w/kg`;
+      })
+      .filter(Boolean);
+  } catch (error) {
+    // Power is an optional manual enhancement. A missing stream, profile
+    // weight, or a temporary read limit must never block the core lap receipt.
+    console.warn("Manual power lookup unavailable:", error.message);
+    return [];
+  }
+}
+
+function formatManualReceipt({ lapCount, fastestLap, powerLines = [] }) {
+  const lines = formatReceipt({ lapCount, fastestLap }).split("\n");
+  return [...lines.slice(0, -1), ...powerLines, lines.at(-1)].join("\n");
+}
+
 function hasLappedReceipt(description) {
   const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
   const receiptLine = `(?:(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}|(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::|\\s·\\s*)[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)`;
@@ -875,8 +948,10 @@ function hasLappedReceipt(description) {
 function removeLappedReceipt(description) {
   const receiptSite = `(?:https?:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")})`;
   const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
+  const fastestLine = `(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::\\s*|\\s·\\s*)[^\\n]+`;
+  const powerLine = `(?:1|5|20) min power\\s·\\s*\\d+ w\\s·\\s*\\d+(?:\\.\\d+)? w\\/kg`;
   return String(description || "")
-    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::\\s*|\\s·\\s*)[^\\n]+)?\\n${receiptSite}(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}(?:\\n(?:${fastestLine}|${powerLine}))*\\n${receiptSite}(?=\\n|$)`, "gi"), "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
     .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
     .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
@@ -1068,7 +1143,8 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   const lapCount = targetEfforts.length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = formatReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts) });
+  const powerLines = await manualRidePowerLines(token, activityId);
+  const stamp = formatManualReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts), powerLines });
   const description = [removeLappedReceipt(activity.description), stamp].filter(Boolean).join("\n");
   if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
@@ -1079,7 +1155,29 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   });
   await markActivityProcessed(athleteId, activityId);
   await clearLapStats(athleteId);
-  return { lapCount, changed: true, description, activityStart: activity.start_date };
+  return { lapCount, changed: true, description, activityStart: activity.start_date, powerLines };
+}
+
+// Manual pushes deliberately use the optional power receipt. The normal
+// webhook scanner remains on the standard three-line format.
+async function pushManualLappedReceiptWithToken(token, activityId, athleteId, activity) {
+  const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
+  const lapCount = targetEfforts.length;
+  if (!lapCount || await activityWasProcessed(athleteId, activityId) || hasLappedReceipt(activity.description)) {
+    return { lapCount, changed: false, description: activity.description ?? "", powerLines: [] };
+  }
+  const powerLines = await manualRidePowerLines(token, activityId);
+  const stamp = formatManualReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts), powerLines });
+  const description = [removeLappedReceipt(activity.description), stamp].filter(Boolean).join("\n");
+  if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "", powerLines };
+  await strava(`/activities/${activityId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ description })
+  });
+  await markActivityProcessed(athleteId, activityId);
+  await clearLapStats(athleteId);
+  return { lapCount, changed: true, description, activityStart: activity.start_date, powerLines };
 }
 
 app.get("/auth/strava", (req, res) => {
@@ -1239,10 +1337,13 @@ app.post("/admin/activity-review/apply", requireAdmin, async (req, res, next) =>
     // admin action, never from a webhook or standard activity update.
     const result = review.status === "already"
       ? await regenerateLappedReceiptWithToken(review.token, review.activityId, review.athleteId, review.activity)
-      : await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity });
+      : await pushManualLappedReceiptWithToken(review.token, review.activityId, review.athleteId, review.activity);
     const status = result.changed ? "pushed" : "already";
+    const powerSummary = result.powerLines?.length
+      ? ` Added ${result.powerLines.map((line) => line.split(" · ")[0]).join(", ")}.`
+      : "";
     const message = result.changed
-      ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt ${review.status === "already" ? "regenerated" : "added"}.`
+      ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt ${review.status === "already" ? "regenerated" : "added"}.${powerSummary}`
       : "This Lapped receipt is already up to date, so nothing was changed.";
     res.json({ status, activityId: review.activityId, lapCount: result.lapCount, fastestLap: review.fastestLap, message });
   } catch (error) {
