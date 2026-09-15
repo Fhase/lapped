@@ -2,7 +2,8 @@ import "./description-format.js";
 
 const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
-const lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), fastestLap = document.querySelector("#fastest-lap"), ytdLabel = document.querySelector("#ytd-label"), lapStatsStatus = document.querySelector("#lap-stats-status");
+const lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), fastestLap = document.querySelector("#fastest-lap"), fastestSpeed = document.querySelector("#fastest-speed"), lifetimeKm = document.querySelector("#lifetime-km"), ytdKm = document.querySelector("#ytd-km"), ytdLabel = document.querySelector("#ytd-label"), lapStatsStatus = document.querySelector("#lap-stats-status");
+const formatKm = (laps, partial = false) => `${Math.round(Number(laps) * 1.85).toLocaleString()}${partial ? "+" : ""} km`;
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
 const connectForm = document.querySelector("#connect-form"), consentBox = document.querySelector("#consent-box"), privacyConsent = document.querySelector("#privacy-consent");
@@ -25,7 +26,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   if (!data.configured) { connect.textContent = "Configure .env first"; connect.disabled = true; return; }
   const localPreview = location.hostname === "localhost" && new URLSearchParams(location.search).has("preview-stats");
   if (!data.connected && !localPreview) return;
-  const athlete = localPreview ? { firstname: "Your", lastname: "laps" } : data.athlete;
+  const athlete = localPreview ? { firstname: "Example", lastname: "Rider" } : data.athlete;
   const name = [athlete?.firstname, athlete?.lastname].filter(Boolean).join(" ");
   athleteName.textContent = name || "Your laps";
   onboarding.hidden = true;
@@ -38,25 +39,41 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectedOverview.classList.add("stats-loading");
   if (localPreview) {
     disconnect.hidden = true;
-    lifetimeLaps.textContent = "—";
-    ytdLaps.textContent = "—";
-    fastestLap.textContent = "—";
-    lapStatsStatus.textContent = "Your lap stats are loading slowly in the background. Come back in a while.";
+    lifetimeLaps.textContent = "2,043";
+    ytdLaps.textContent = "756";
+    fastestLap.textContent = "2:38";
+    fastestSpeed.textContent = "42.3 km/h";
+    lifetimeKm.textContent = formatKm(2043);
+    ytdKm.textContent = formatKm(756);
+    lapStatsStatus.textContent = "staging preview · example stats";
+    connectedOverview.classList.remove("stats-loading");
     return;
   }
   fetch("/api/lap-stats").then((response) => response.ok ? response.json() : Promise.reject()).then((stats) => {
     ytdLabel.textContent = `${stats.year} laps`;
-    if (stats.lifetime !== null) lifetimeLaps.textContent = stats.lifetime;
-    if (stats.fastestLap) fastestLap.textContent = stats.fastestLap;
+    if (stats.lifetime !== null) {
+      lifetimeLaps.textContent = Number(stats.lifetime).toLocaleString();
+      lifetimeKm.textContent = formatKm(stats.lifetime);
+    }
+    if (stats.fastestLap) {
+      const [time, speed] = String(stats.fastestLap).split(" · ");
+      fastestLap.textContent = time || "—";
+      fastestSpeed.textContent = speed || "—";
+    }
     if (stats.status !== "ready") {
-      if (stats.ytdPartial !== null) ytdLaps.textContent = `${stats.ytdPartial}+`;
+      if (stats.ytdPartial !== null) {
+        ytdLaps.textContent = `${Number(stats.ytdPartial).toLocaleString()}+`;
+        ytdKm.textContent = formatKm(stats.ytdPartial, true);
+      }
       lapStatsStatus.textContent = "Your lap stats are loading slowly in the background. Come back in a while.";
       return;
     }
     connectedOverview.classList.remove("stats-loading");
     lifetimeLaps.textContent = stats.lifetime ?? "—";
-    ytdLaps.textContent = stats.ytd ?? "—";
-    fastestLap.textContent = stats.fastestLap || "—";
+    ytdLaps.textContent = stats.ytd === null ? "—" : Number(stats.ytd).toLocaleString();
+    ytdKm.textContent = stats.ytd === null ? "—" : formatKm(stats.ytd);
+    fastestLap.textContent = stats.fastestLap ? String(stats.fastestLap).split(" · ")[0] : "—";
+    fastestSpeed.textContent = stats.fastestLap ? (String(stats.fastestLap).split(" · ")[1] || "—") : "—";
     lapStatsStatus.textContent = "Updated from your private Strava segment history.";
   }).catch(() => { lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
