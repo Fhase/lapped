@@ -8,9 +8,10 @@ function unicodeDigits(value) {
 
 export function formatReceiptLines({ lapCount, fastestLap, siteUrl = receiptSiteUrl, style = "normal" }) {
   const useUnicode = style === "unicode";
+  const separator = useUnicode ? " · " : ": ";
   return [
-    `${useUnicode ? "ʟᴀᴘꜱ" : "laps"}: ${useUnicode ? unicodeDigits(lapCount) : lapCount}`,
-    fastestLap && `${useUnicode ? "ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ" : "fastest lap"}: ${useUnicode ? unicodeDigits(fastestLap).replace("km/h", "ᴋᴍ/ʜ") : fastestLap}`,
+    `${useUnicode ? "𝚕𝚊𝚙𝚜" : "laps"}${separator}${useUnicode ? unicodeDigits(lapCount) : lapCount}`,
+    fastestLap && `${useUnicode ? "𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙" : "fastest lap"}${separator}${useUnicode ? unicodeDigits(fastestLap).replace("km/h", "𝚔𝚖/𝚑") : fastestLap}`,
     siteUrl
   ].filter(Boolean);
 }

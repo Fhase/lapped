@@ -866,15 +866,17 @@ function formatFastestLap(efforts) {
 }
 
 function hasLappedReceipt(description) {
-  const receiptLine = "(?:(?:laps|ʟᴀᴘꜱ):\\s*\\d+|(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ):[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)";
+  const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
+  const receiptLine = `(?:(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}|(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::|\\s·\\s*)[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)`;
   const receiptSite = "(?:https?:\\/\\/)?(?:www\\.)?(?:lapped\\.fit|lapped\\.onrender\\.com)";
   return new RegExp(`(?:^|\\r?\\n)(?:${receiptLine})(?:\\r?\\n[^\\r\\n]+){0,4}\\r?\\n${receiptSite}(?=\\r?\\n|$)|(?:^|\\r?\\n)high park laps:\\s*\\d+(?=\\r?\\n|$)`, "i").test(String(description || ""));
 }
 
 function removeLappedReceipt(description) {
   const receiptSite = `(?:https?:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")})`;
+  const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
   return String(description || "")
-    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ): \\d+(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ): [^\\n]+)?\\n${receiptSite}(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::\\s*|\\s·\\s*)[^\\n]+)?\\n${receiptSite}(?=\\n|$)`, "gi"), "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
     .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
     .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
