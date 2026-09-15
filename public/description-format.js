@@ -3,8 +3,8 @@ export const receiptSiteHref = "https://www.lapped.fit";
 
 export function formatReceiptLines({ lapCount, fastestLap, siteUrl = receiptSiteUrl }) {
   return [
-    `laps: ${lapCount}`,
-    fastestLap && `fastest lap: ${fastestLap}`,
+    `ʟᴀᴘꜱ: ${lapCount}`,
+    fastestLap && `ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ: ${fastestLap.replace("km/h", "ᴋᴍ/ʜ")}`,
     siteUrl
   ].filter(Boolean);
 }
