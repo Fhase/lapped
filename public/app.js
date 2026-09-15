@@ -2,6 +2,7 @@ import "./description-format.js";
 
 const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
+const connectedStatus = document.querySelector(".connected-status");
 const lifetimeLaps = document.querySelector("#lifetime-laps"), ytdLaps = document.querySelector("#ytd-laps"), fastestLap = document.querySelector("#fastest-lap"), fastestSpeed = document.querySelector("#fastest-speed"), lifetimeKm = document.querySelector("#lifetime-km"), ytdKm = document.querySelector("#ytd-km"), ytdLabel = document.querySelector("#ytd-label"), lapStatsStatus = document.querySelector("#lap-stats-status");
 const formatKm = (laps, partial = false) => `${Math.round(Number(laps) * 1.85).toLocaleString()}${partial ? "+" : ""} km`;
 const lapLink = document.querySelector("#lap-link");
@@ -36,6 +37,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectForm.hidden = true;
   consentBox.hidden = true;
   disconnect.hidden = false;
+  connectedStatus.hidden = false;
   connectedOverview.classList.add("stats-loading");
   [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.add("stat-loading"));
   if (localPreview) {

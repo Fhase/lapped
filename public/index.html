@@ -54,7 +54,6 @@
         <p>Completed High Park laps get a count in your activity description. Your own notes stay yours.</p>
       </div>
       <div class="connected-overview" id="connected-overview" hidden aria-live="polite">
-        <p class="status connected-status">You’re connected to Strava.</p>
         <h2 id="athlete-name"></h2>
         <div class="lap-stats-values" id="lap-stats-values" aria-live="polite">
           <p><strong id="lifetime-laps">—</strong><span>lifetime laps</span><span class="substat" id="lifetime-km">—</span></p>
@@ -69,6 +68,7 @@
           <label class="consent-box" id="consent-box"><input id="privacy-consent" name="consent" value="yes" type="checkbox" required> <span>I agree to lapped’s <a href="/privacy.html">data use and privacy policy</a> and <a href="/terms.html">terms</a>.</span></label>
         </form>
         <button class="button" id="disconnect" hidden><img class="strava-mark" src="/strava-mark.png" alt="" aria-hidden="true" /><span class="button-label">Disconnect Strava</span></button>
+        <p class="status connected-status" hidden>You’re connected to Strava.</p>
       </div>
     </section>
     <section class="notes" id="description-example">
