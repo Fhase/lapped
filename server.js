@@ -422,7 +422,7 @@ function manualPushPanel(tokens = {}) {
 }
 
 const manualPushEnhancements = `<script>
-(()=>{const form=document.querySelector('#manual-push-form'),input=document.querySelector('#manual-push-url'),owner=document.querySelector('#manual-push-owner'),check=document.querySelector('#manual-push-check'),result=document.querySelector('#manual-push-result'),confirm=document.querySelector('#manual-push-confirm');if(!form)return;let readyUrl='';const post=async(path,url)=>{const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({url,athleteId:owner.value})});const body=await response.json().catch(()=>({error:'Something went wrong.'}));if(!response.ok)throw new Error(body.error||'Something went wrong.');return body};const show=(body)=>{result.textContent=body.message||'';result.dataset.state=body.status||'';readyUrl=body.status==='ready'?input.value.trim():'';confirm.hidden=!readyUrl};form.addEventListener('submit',async(event)=>{event.preventDefault();confirm.hidden=true;readyUrl='';if(!owner.value){owner.hidden=false;result.textContent='Choose the connected rider for this activity.';return}check.disabled=true;result.textContent='Checking ride…';result.dataset.state='';try{show(await post('/admin/activity-review/check',input.value.trim()))}catch(error){result.textContent=error.message}finally{check.disabled=false}});confirm.addEventListener('click',async()=>{if(!readyUrl)return;confirm.disabled=true;result.textContent='Writing description…';try{show(await post('/admin/activity-review/apply',readyUrl));if(result.dataset.state==='pushed')input.value=''}catch(error){result.textContent=error.message}finally{confirm.disabled=false}})})();
+(()=>{const form=document.querySelector('#manual-push-form'),input=document.querySelector('#manual-push-url'),owner=document.querySelector('#manual-push-owner'),check=document.querySelector('#manual-push-check'),result=document.querySelector('#manual-push-result'),confirm=document.querySelector('#manual-push-confirm');if(!form)return;let readyUrl='',canRegenerate=false;const post=async(path,url)=>{const response=await fetch(path,{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({url,athleteId:owner.value})});const body=await response.json().catch(()=>({error:'Something went wrong.'}));if(!response.ok)throw new Error(body.error||'Something went wrong.');return body};const show=(body)=>{result.textContent=body.message||'';result.dataset.state=body.status||'';readyUrl=['ready','already'].includes(body.status)?input.value.trim():'';canRegenerate=body.status==='already';confirm.textContent=canRegenerate?'Regenerate receipt':'Push description';confirm.hidden=!readyUrl};form.addEventListener('submit',async(event)=>{event.preventDefault();confirm.hidden=true;readyUrl='';canRegenerate=false;if(!owner.value){owner.hidden=false;result.textContent='Choose the connected rider for this activity.';return}check.disabled=true;result.textContent='Checking ride…';result.dataset.state='';try{show(await post('/admin/activity-review/check',input.value.trim()))}catch(error){result.textContent=error.message}finally{check.disabled=false}});confirm.addEventListener('click',async()=>{if(!readyUrl)return;confirm.disabled=true;result.textContent=canRegenerate?'Regenerating receipt…':'Writing description…';try{show(await post('/admin/activity-review/apply',readyUrl));if(result.dataset.state==='pushed')input.value=''}catch(error){result.textContent=error.message}finally{confirm.disabled=false}})})();
 </script>`;
 
 function ticketPanel(stored) {
@@ -866,9 +866,20 @@ function formatFastestLap(efforts) {
 }
 
 function hasLappedReceipt(description) {
-  const receiptLine = "(?:laps:\\s*\\d+|fastest lap:[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)";
+  const receiptLine = "(?:(?:laps|ʟᴀᴘꜱ):\\s*\\d+|(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ):[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)";
   const receiptSite = "(?:https?:\\/\\/)?(?:www\\.)?(?:lapped\\.fit|lapped\\.onrender\\.com)";
   return new RegExp(`(?:^|\\r?\\n)(?:${receiptLine})(?:\\r?\\n[^\\r\\n]+){0,4}\\r?\\n${receiptSite}(?=\\r?\\n|$)|(?:^|\\r?\\n)high park laps:\\s*\\d+(?=\\r?\\n|$)`, "i").test(String(description || ""));
+}
+
+function removeLappedReceipt(description) {
+  const receiptSite = `(?:https?:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")})`;
+  return String(description || "")
+    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ): \\d+(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ): [^\\n]+)?\\n${receiptSite}(?=\\n|$)`, "gi"), "")
+    .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
+    .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)L O O P S : \\d+(?:\\n${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "g"), "")
+    .trim();
 }
 
 async function scanActivity(req, activityId) {
@@ -965,10 +976,10 @@ async function reviewManualActivity(value, athleteId, tokens) {
   const alreadyProcessed = await activityWasProcessed(match.athleteId, activityId);
   const alreadyDescribed = hasLappedReceipt(match.activity.description);
   const details = `${athleteName} · ${lapCount} completed High Park lap${lapCount === 1 ? "" : "s"}${fastestLap ? ` · fastest lap ${fastestLap}` : ""}`;
-  if (alreadyProcessed || alreadyDescribed) {
-    return { ...match, status: "already", lapCount, fastestLap, message: `${details}. It already has a Lapped receipt, so nothing will be changed.` };
-  }
   if (!lapCount) return { ...match, status: "no-laps", lapCount: 0, message: `${athleteName}'s ride has no completed High Park laps. Nothing will be changed.` };
+  if (alreadyProcessed || alreadyDescribed) {
+    return { ...match, status: "already", lapCount, fastestLap, message: `${details}. It already has a Lapped receipt. You can regenerate that receipt once from this admin check.` };
+  }
   return { ...match, status: "ready", lapCount, fastestLap, message: `${details}. Ready to push the standard Lapped receipt.` };
 }
 
@@ -1029,18 +1040,35 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
   });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
-  const existing = (activity.description || "")
-    .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
-    .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
-    .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
-    .replace(new RegExp(`(?:^|\\n)L O O P S : \\d+(?:\\n${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "g"), "")
-    .trim();
+  const existing = removeLappedReceipt(activity.description);
   const description = [existing, stamp].filter(Boolean).join("\n");
   // Strava also emits an update event for our own description write. Do not
   // write an identical value back and accidentally create a webhook loop.
   if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   // A disconnect can race an already received webhook. Check immediately
   // before writing so a removed connection cannot modify another activity.
+  if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
+  await strava(`/activities/${activityId}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ description })
+  });
+  await markActivityProcessed(athleteId, activityId);
+  await clearLapStats(athleteId);
+  return { lapCount, changed: true, description, activityStart: activity.start_date };
+}
+
+// This is intentionally separate from the normal scanner. It is reachable
+// only through the private admin manual-push confirmation after an activity
+// has already been reviewed, and replaces one existing Lapped block in place.
+async function regenerateLappedReceiptWithToken(token, activityId, athleteId, activity) {
+  const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
+  const lapCount = targetEfforts.length;
+  if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
+
+  const stamp = formatReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts) });
+  const description = [removeLappedReceipt(activity.description), stamp].filter(Boolean).join("\n");
+  if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
   await strava(`/activities/${activityId}`, {
     method: "PUT",
@@ -1195,7 +1223,7 @@ app.post("/admin/activity-review/check", requireAdmin, async (req, res, next) =>
 app.post("/admin/activity-review/apply", requireAdmin, async (req, res, next) => {
   try {
     const review = await reviewManualActivity(req.body?.url, req.body?.athleteId, req.connectedTokens);
-    if (review.status !== "ready") {
+    if (!["ready", "already"].includes(review.status)) {
       return res.status(review.status === "invalid" ? 400 : 200).json({
         status: review.status,
         activityId: review.activityId || null,
@@ -1204,14 +1232,16 @@ app.post("/admin/activity-review/apply", requireAdmin, async (req, res, next) =>
         message: review.message
       });
     }
-    // Pass the just-read activity through to the normal scanner. This avoids a
-    // second Strava read after confirmation while retaining every existing
-    // duplicate-prevention and description-preservation rule.
-    const result = await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity });
+    // A normal ready activity uses the normal one-write scanner. An already
+    // processed activity may be replaced only from this confirmed private
+    // admin action, never from a webhook or standard activity update.
+    const result = review.status === "already"
+      ? await regenerateLappedReceiptWithToken(review.token, review.activityId, review.athleteId, review.activity)
+      : await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity });
     const status = result.changed ? "pushed" : "already";
     const message = result.changed
-      ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt added.`
-      : "This ride already has a Lapped receipt, so nothing was changed.";
+      ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt ${review.status === "already" ? "regenerated" : "added"}.`
+      : "This Lapped receipt is already up to date, so nothing was changed.";
     res.json({ status, activityId: review.activityId, lapCount: result.lapCount, fastestLap: review.fastestLap, message });
   } catch (error) {
     if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting writes. Wait a few minutes, then try again." });
