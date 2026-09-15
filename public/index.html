@@ -30,7 +30,7 @@
     </nav>
     <section class="intro">
       <div class="copy">
-        <h1><span class="title-sans">Count your laps.</span></h1>
+        <h1 aria-label="Count your laps."><span class="title-sans">Count your laps.</span></h1>
         <p class="lede">That’s it. Lapped adds a lap count to your Strava activity when you finish a High Park loop. If you don’t, it leaves your ride alone.</p>
         <a class="text-link" id="lap-link" href="#connect-card">get lapped <span>↓</span></a>
       </div>
@@ -56,6 +56,12 @@
       <div class="connected-overview" id="connected-overview" hidden aria-live="polite">
         <p class="status connected-status">You’re connected to Strava.</p>
         <h2 id="athlete-name"></h2>
+        <div class="lap-stats-values" id="lap-stats-values" aria-live="polite">
+          <p><strong id="lifetime-laps">—</strong><span>lifetime laps</span></p>
+          <p><strong id="ytd-laps">—</strong><span id="ytd-label">2026 laps</span></p>
+          <p><strong id="fastest-lap">—</strong><span>fastest lap ever</span></p>
+        </div>
+        <p class="lap-stats-status" id="lap-stats-status">Your lap stats are loading slowly in the background. Come back in a while.</p>
       </div>
       <div class="actions">
         <form id="connect-form" action="/auth/strava" method="get">

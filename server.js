@@ -17,7 +17,7 @@ const publicSiteHost = receiptSiteUrl.replace(/^www\./, "");
 // so those receipts are still replaced without publishing that legacy address.
 const legacyReceiptHost = ["lapped", ["onrender", "com"].join(".")].join(".");
 const segmentId = String(process.env.HIGH_PARK_SEGMENT_ID || "");
-const lapStatsEnabled = false;
+const lapStatsEnabled = true;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
@@ -50,6 +50,13 @@ const waitlistSubmissions = new Map();
 const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
 const activityCacheRetentionMs = 7 * 24 * 60 * 60 * 1000;
+// Personal lap summaries are intentionally refreshed slowly: one Strava read
+// at a time, five minutes apart. This gives new connections a fair place in
+// line without competing with the activity receipt webhook.
+const personalStatsStepMs = 5 * 60 * 1000;
+const personalStatsRetentionMs = 7 * 24 * 60 * 60 * 1000;
+let personalStatsTimer = null;
+let personalStatsBusy = false;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -286,6 +293,29 @@ async function clearLapStats(athleteId) {
   await writeEncryptedStore(lapStatsStore, stats);
 }
 
+function fastestLapSeconds(value) {
+  const match = String(value || "").match(/^(\d+):(\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : Infinity;
+}
+
+async function addActivityToPersonalStats(athleteId, activity, targetEfforts) {
+  const stats = await readLapStats();
+  const entry = stats[athleteId];
+  // A historical scan in progress will naturally include this activity. Do
+  // not try to merge partial data into it — that is how double counting starts.
+  if (entry?.version !== 6 || entry.status !== "ready") return;
+  const lapCount = targetEfforts.length;
+  if (!lapCount) return;
+  entry.lifetime = Math.max(0, Number(entry.lifetime) || 0) + lapCount;
+  const activityYear = Number(String(activity.start_date_local || activity.start_date || "").slice(0, 4));
+  if (activityYear === entry.year) entry.ytd = Math.max(0, Number(entry.ytd) || 0) + lapCount;
+  const rideFastest = formatFastestLap(targetEfforts);
+  if (rideFastest && fastestLapSeconds(rideFastest) < fastestLapSeconds(entry.fastestLap)) entry.fastestLap = rideFastest;
+  entry.updatedAt = Date.now();
+  stats[athleteId] = entry;
+  await writeEncryptedStore(lapStatsStore, stats);
+}
+
 async function activityWasProcessed(athleteId, activityId) {
   if (!athleteId || !activityId) return false;
   const stats = await readLapStats();
@@ -308,9 +338,17 @@ async function pruneStravaCaches() {
     const current = Object.fromEntries(Object.entries(activities || {}).filter(([, processedAt]) => Number(processedAt) >= cutoff));
     return [athleteId, current];
   }).filter(([, activities]) => Object.keys(activities).length));
-  // Only the seven-day duplicate-prevention cache remains. Historical lap
-  // totals and effort-derived values are intentionally discarded.
-  const cleanedStats = Object.keys(processed).length ? { __processed: processed } : {};
+  // Keep only a short-lived, private summary for a connected athlete. The
+  // temporary range and effort-id cursor is deleted as soon as its scan is
+  // complete; it is never an activity history or a cross-athlete dataset.
+  const summaries = Object.fromEntries(Object.entries(stats).filter(([athleteId, value]) => {
+    if (athleteId === "__processed" || !value || typeof value !== "object") return false;
+    return Number(value.checkedAt || value.queuedAt || 0) >= cutoff;
+  }));
+  const cleanedStats = {
+    ...(Object.keys(processed).length ? { __processed: processed } : {}),
+    ...summaries
+  };
   if (JSON.stringify(stats) !== JSON.stringify(cleanedStats)) await writeEncryptedStore(lapStatsStore, cleanedStats);
 
   // Retire the old cross-athlete leaderboard cache without ever reading or
@@ -848,6 +886,141 @@ async function getLapStats(token, athleteId, { includeYtd = false } = {}) {
   }
 }
 
+function freshPersonalStats() {
+  return {
+    version: 6,
+    status: "queued",
+    lifetime: null,
+    ytd: null,
+    fastestLap: null,
+    year: new Date().getUTCFullYear(),
+    phase: "segment",
+    queuedAt: Date.now(),
+    nextAttemptAt: Date.now()
+  };
+}
+
+function fastestFromSegment(segment) {
+  const seconds = Number(segment?.athlete_segment_stats?.pr_elapsed_time);
+  const distance = Number(segment?.distance);
+  if (!Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(distance) || distance <= 0) return null;
+  const rounded = Math.round(seconds);
+  const minutes = Math.floor(rounded / 60);
+  const remainder = String(rounded % 60).padStart(2, "0");
+  return `${minutes}:${remainder} · ${(distance / seconds * 3.6).toFixed(1)} km/h`;
+}
+
+async function personalStatsFor(athleteId) {
+  const stats = await readLapStats();
+  const cached = stats[athleteId];
+  const stale = !cached || cached.version !== 6 || Number(cached.checkedAt || cached.queuedAt || 0) < Date.now() - personalStatsRetentionMs;
+  if (stale) {
+    stats[athleteId] = freshPersonalStats();
+    await writeEncryptedStore(lapStatsStore, stats);
+  }
+  schedulePersonalStatsStep(personalStatsStepMs);
+  return stats[athleteId] || cached;
+}
+
+function schedulePersonalStatsStep(delay = personalStatsStepMs) {
+  if (personalStatsTimer || !lapStatsEnabled) return;
+  personalStatsTimer = setTimeout(() => {
+    personalStatsTimer = null;
+    runPersonalStatsStep().catch((error) => console.error("Personal stats step failed:", error.message));
+  }, delay);
+  personalStatsTimer.unref?.();
+}
+
+async function queueConnectedPersonalStats() {
+  const [stats, tokens] = await Promise.all([readLapStats(), readTokens()]);
+  let changed = false;
+  const cutoff = Date.now() - personalStatsRetentionMs;
+  for (const athleteId of Object.keys(tokens)) {
+    const current = stats[athleteId];
+    if (!current || current.version !== 6 || Number(current.checkedAt || current.queuedAt || 0) < cutoff) {
+      stats[athleteId] = freshPersonalStats();
+      changed = true;
+    }
+  }
+  if (changed) await writeEncryptedStore(lapStatsStore, stats);
+  if (Object.keys(tokens).length) schedulePersonalStatsStep(personalStatsStepMs);
+}
+
+async function runPersonalStatsStep() {
+  if (personalStatsBusy) return;
+  personalStatsBusy = true;
+  let hasPendingWork = false;
+  let activeAthleteId = null;
+  try {
+    const [stats, tokens] = await Promise.all([readLapStats(), readTokens()]);
+    const now = Date.now();
+    const candidates = Object.entries(tokens)
+      .map(([athleteId]) => [athleteId, stats[athleteId]])
+      .filter(([, entry]) => entry?.version === 6 && entry.status !== "ready" && Number(entry.nextAttemptAt || 0) <= now)
+      // Round-robin the queue. A rider with a long YTD history gets one read,
+      // then moves behind every other waiting rider.
+      .sort((a, b) => Number(a[1].lastStepAt || 0) - Number(b[1].lastStepAt || 0));
+    const next = candidates[0];
+    if (!next) return;
+    const [athleteId, entry] = next;
+    activeAthleteId = athleteId;
+    entry.status = "loading";
+    const token = await tokenForAthlete(athleteId);
+
+    if (entry.phase === "segment") {
+      const segment = await strava(`/segments/${segmentId}`, stravaHeaders(token));
+      entry.lifetime = Number(segment.athlete_segment_stats?.effort_count) || 0;
+      entry.fastestLap = fastestFromSegment(segment);
+      entry.phase = "ytd";
+      entry.ytdRanges = [{ start: new Date(Date.UTC(entry.year, 0, 1)).toISOString(), end: new Date().toISOString() }];
+      entry.ytdSeen = [];
+      entry.ytdTotal = 0;
+    } else {
+      const range = entry.ytdRanges?.shift();
+      if (!range) {
+        entry.ytd = Number(entry.ytdTotal) || 0;
+        entry.status = "ready";
+        entry.checkedAt = Date.now();
+        delete entry.phase;
+        delete entry.ytdRanges;
+        delete entry.ytdSeen;
+        delete entry.ytdTotal;
+      } else {
+        const params = new URLSearchParams({ segment_id: segmentId, start_date_local: range.start, end_date_local: range.end, per_page: "200" });
+        const batch = await strava(`/segment_efforts?${params}`, stravaHeaders(token));
+        const seen = new Set(entry.ytdSeen || []);
+        if (batch.length >= 200) {
+          const start = Date.parse(range.start), end = Date.parse(range.end), midpoint = start + Math.floor((end - start) / 2);
+          if (!Number.isFinite(midpoint) || midpoint <= start || midpoint >= end) throw new Error("Could not safely divide this stats range.");
+          entry.ytdRanges.unshift({ start: new Date(midpoint + 1).toISOString(), end: range.end }, { start: range.start, end: new Date(midpoint).toISOString() });
+        } else {
+          for (const effort of batch) seen.add(String(effort.id));
+        }
+        entry.ytdSeen = [...seen];
+        entry.ytdTotal = seen.size;
+      }
+    }
+    entry.lastStepAt = Date.now();
+    stats[athleteId] = entry;
+    await writeEncryptedStore(lapStatsStore, stats);
+  } catch (error) {
+    console.error("Slow personal stats read failed:", error.message);
+    // Keep the connection untouched and simply retry after Strava's next
+    // rate-limit window instead of repeatedly calling a throttled endpoint.
+    try {
+      const stats = await readLapStats();
+      const retry = activeAthleteId ? stats[activeAthleteId] : null;
+      if (retry) { retry.status = "queued"; retry.nextAttemptAt = Date.now() + 16 * 60 * 1000; await writeEncryptedStore(lapStatsStore, stats); }
+    } catch (persistError) { console.error("Could not save personal stats retry:", persistError.message); }
+  } finally {
+    personalStatsBusy = false;
+    const stats = await readLapStats();
+    const tokens = await readTokens();
+    hasPendingWork = Object.entries(tokens).some(([athleteId]) => stats[athleteId]?.version === 6 && stats[athleteId].status !== "ready");
+    if (hasPendingWork) schedulePersonalStatsStep(personalStatsStepMs);
+  }
+}
+
 function isTargetEffort(effort) {
   return String(effort.segment?.id ?? effort.segment_id ?? "") === segmentId;
 }
@@ -1056,7 +1229,7 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
     body: JSON.stringify({ description })
   });
   await markActivityProcessed(athleteId, activityId);
-  await clearLapStats(athleteId);
+  await addActivityToPersonalStats(athleteId, activity, targetEfforts);
   return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
 
@@ -1078,7 +1251,8 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
     body: JSON.stringify({ description })
   });
   await markActivityProcessed(athleteId, activityId);
-  await clearLapStats(athleteId);
+  // Regeneration only replaces an existing receipt; it is never a new lap
+  // event and therefore must not change the personal totals.
   return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
 
@@ -1119,6 +1293,10 @@ app.get("/auth/strava/complete", async (req, res, next) => {
     if (!response.ok) throw new Error("Strava did not authorize the app.");
     req.session.strava = await response.json();
     await saveToken(req.session.strava);
+    // Start the private stats job asynchronously. Authorization completes
+    // immediately; the queue performs the reads later and never disconnects
+    // an athlete if a read is delayed or rate-limited.
+    await personalStatsFor(String(req.session.strava.athlete?.id || ""));
     if (cookieValue(req, "lapped_analytics_opt_out") !== "1") await recordAnalyticsEvent(visitorIdFor(req, res), "connected");
     delete req.session.oauthState;
     const returnTo = req.session.returnTo || "/?connected=1";
@@ -1128,6 +1306,21 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 });
 
 app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.get("/api/lap-stats", async (req, res, next) => {
+  try {
+    const athleteId = String(req.session.strava?.athlete?.id || "");
+    if (!athleteId) return res.status(401).json({ error: "Connect Strava to view your lap stats." });
+    const stats = await personalStatsFor(athleteId);
+    res.json({
+      status: stats?.status || "queued",
+      lifetime: Number.isFinite(stats?.lifetime) ? stats.lifetime : null,
+      ytd: Number.isFinite(stats?.ytd) ? stats.ytd : null,
+      ytdPartial: Number.isFinite(stats?.ytdTotal) ? stats.ytdTotal : null,
+      fastestLap: stats?.fastestLap || null,
+      year: stats?.year || new Date().getUTCFullYear()
+    });
+  } catch (error) { next(error); }
+});
 app.get("/waitlist", (_req, res) => res.type("html").send(waitlistPage()));
 app.post("/api/waitlist", async (req, res, next) => {
   try {
@@ -1162,7 +1355,8 @@ app.get("/account/data", async (req, res, next) => {
       retained: [
         "Your Strava athlete ID and display name while connected",
         "Encrypted authorization tokens while connected",
-        "A duplicate-prevention activity cache for up to seven days"
+        "A duplicate-prevention activity cache for up to seven days",
+        "A private lap summary (lifetime laps, current-year laps, and fastest lap) for up to seven days"
       ],
       notRetained: ["Activity history", "segment-effort history", "leaderboards or cross-athlete rankings"]
     });
@@ -1340,8 +1534,11 @@ app.post("/webhook", (req, res) => {
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
 async function startServer() {
   await pruneStravaCaches();
+  await queueConnectedPersonalStats();
   const cachePruner = setInterval(() => {
-    pruneStravaCaches().catch((error) => console.error("Strava cache cleanup failed:", error.message));
+    pruneStravaCaches()
+      .then(queueConnectedPersonalStats)
+      .catch((error) => console.error("Strava cache cleanup failed:", error.message));
   }, 24 * 60 * 60 * 1000);
   cachePruner.unref?.();
   app.listen(process.env.PORT || 3000, process.env.HOST || (process.env.RENDER_EXTERNAL_URL ? "0.0.0.0" : "127.0.0.1"), () => {
