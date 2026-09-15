@@ -1,17 +1,22 @@
 export const receiptSiteUrl = "www.lapped.fit";
 export const receiptSiteHref = "https://www.lapped.fit";
 
-export function formatReceiptLines({ lapCount, fastestLap, siteUrl = receiptSiteUrl, style = "unicode" }) {
+function unicodeDigits(value) {
+  const digits = Array.from("𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿");
+  return String(value).replace(/\d/g, (digit) => digits[Number(digit)]);
+}
+
+export function formatReceiptLines({ lapCount, fastestLap, siteUrl = receiptSiteUrl, style = "normal" }) {
   const useUnicode = style === "unicode";
   return [
-    `${useUnicode ? "ʟᴀᴘꜱ" : "laps"}: ${lapCount}`,
-    fastestLap && `${useUnicode ? "ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ" : "fastest lap"}: ${useUnicode ? fastestLap.replace("km/h", "ᴋᴍ/ʜ") : fastestLap}`,
+    `${useUnicode ? "ʟᴀᴘꜱ" : "laps"}: ${useUnicode ? unicodeDigits(lapCount) : lapCount}`,
+    fastestLap && `${useUnicode ? "ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ" : "fastest lap"}: ${useUnicode ? unicodeDigits(fastestLap).replace("km/h", "ᴋᴍ/ʜ") : fastestLap}`,
     siteUrl
   ].filter(Boolean);
 }
 
-export function formatReceipt({ lapCount, fastestLap, siteUrl = receiptSiteUrl }) {
-  return formatReceiptLines({ lapCount, fastestLap, siteUrl }).join("\n");
+export function formatReceipt({ lapCount, fastestLap, siteUrl = receiptSiteUrl, style = "normal" }) {
+  return formatReceiptLines({ lapCount, fastestLap, siteUrl, style }).join("\n");
 }
 
 if (typeof document !== "undefined") {
