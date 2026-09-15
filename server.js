@@ -1016,7 +1016,7 @@ function queueProcessingRetry(athleteId, activityId) {
   processingRetries.set(key, timer);
 }
 
-async function scanActivityWithToken(token, activityId, athleteId, { retryIfProcessing = false, activity: loadedActivity = null, receiptStyle = "normal" } = {}) {
+async function scanActivityWithToken(token, activityId, athleteId, { retryIfProcessing = false, activity: loadedActivity = null } = {}) {
   const activity = loadedActivity || await strava(`/activities/${activityId}?include_all_efforts=true`, { headers: { Authorization: `Bearer ${token}` } });
   const targetEfforts = (activity.segment_efforts || []).filter(isTargetEffort);
   const lapCount = targetEfforts.length;
@@ -1038,8 +1038,7 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
   const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
     lapCount,
-    fastestLap,
-    style: receiptStyle
+    fastestLap
   });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
@@ -1069,7 +1068,7 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   const lapCount = targetEfforts.length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = formatReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts), style: "unicode" });
+  const stamp = formatReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts) });
   const description = [removeLappedReceipt(activity.description), stamp].filter(Boolean).join("\n");
   if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
@@ -1240,7 +1239,7 @@ app.post("/admin/activity-review/apply", requireAdmin, async (req, res, next) =>
     // admin action, never from a webhook or standard activity update.
     const result = review.status === "already"
       ? await regenerateLappedReceiptWithToken(review.token, review.activityId, review.athleteId, review.activity)
-      : await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity, receiptStyle: "unicode" });
+      : await scanActivityWithToken(review.token, review.activityId, review.athleteId, { activity: review.activity });
     const status = result.changed ? "pushed" : "already";
     const message = result.changed
       ? `${athleteDisplayName(req.connectedTokens[review.athleteId]?.athlete)} · ${result.lapCount} completed High Park lap${result.lapCount === 1 ? "" : "s"}${review.fastestLap ? ` · fastest lap ${review.fastestLap}` : ""}. Lapped receipt ${review.status === "already" ? "regenerated" : "added"}.`
