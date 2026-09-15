@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
-:root{--ink:#20201e;--paper:#f3f0ea;--red:#fc4c02;--muted:#6f6b65;--route-bg:#dcdfcf;--park:#b5bbac;--route:#20201e;--route-meta:#4f5549}
+:root{color-scheme:light;--ink:#20201e;--paper:#f3f0ea;--red:#fc4c02;--muted:#6f6b65;--route-bg:#dcdfcf;--park:#b5bbac;--route:#20201e;--route-meta:#4f5549}
 html[data-theme="dark"]{--ink:#f2eee7;--paper:#191a18;--red:#fc4c02;--muted:#aaa69e;--route-bg:#30372d;--park:#596052;--route:#f2eee7;--route-meta:#c6cbbd}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
