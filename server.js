@@ -52,10 +52,15 @@ const waitlistSubmissions = new Map();
 const processingRetryDelayMs = 2 * 60 * 1000;
 const processingRetries = new Map();
 const activityCacheRetentionMs = 7 * 24 * 60 * 60 * 1000;
-// Personal lap summaries are intentionally refreshed slowly: one Strava read
-// at a time, five minutes apart. This gives new connections a fair place in
-// line without competing with the activity receipt webhook.
-const personalStatsStepMs = 5 * 60 * 1000;
+// Personal lap summaries are normally refreshed slowly. This temporary,
+// persisted-in-code window lets the current backlog catch up for four hours,
+// then automatically returns to the safer cadence.
+const personalStatsNormalStepMs = 5 * 60 * 1000;
+const personalStatsFastStepMs = 30 * 1000;
+const personalStatsFastUntil = Date.parse("2026-09-15T23:21:15Z");
+function personalStatsStepDelay() {
+  return Date.now() < personalStatsFastUntil ? personalStatsFastStepMs : personalStatsNormalStepMs;
+}
 const personalStatsRetentionMs = 7 * 24 * 60 * 60 * 1000;
 let personalStatsTimer = null;
 let personalStatsBusy = false;
@@ -963,11 +968,11 @@ async function personalStatsFor(athleteId) {
     stats[athleteId] = freshPersonalStats();
     await writeEncryptedStore(lapStatsStore, stats);
   }
-  schedulePersonalStatsStep(personalStatsStepMs);
+  schedulePersonalStatsStep(personalStatsStepDelay());
   return stats[athleteId] || cached;
 }
 
-function schedulePersonalStatsStep(delay = personalStatsStepMs) {
+function schedulePersonalStatsStep(delay = personalStatsStepDelay()) {
   if (personalStatsTimer || !lapStatsEnabled) return;
   personalStatsTimer = setTimeout(() => {
     personalStatsTimer = null;
@@ -988,7 +993,7 @@ async function queueConnectedPersonalStats() {
     }
   }
   if (changed) await writeEncryptedStore(lapStatsStore, stats);
-  if (Object.keys(tokens).length) schedulePersonalStatsStep(personalStatsStepMs);
+  if (Object.keys(tokens).length) schedulePersonalStatsStep(personalStatsStepDelay());
 }
 
 async function runPersonalStatsStep() {
@@ -1062,7 +1067,7 @@ async function runPersonalStatsStep() {
     const stats = await readLapStats();
     const tokens = await readTokens();
     hasPendingWork = Object.entries(tokens).some(([athleteId]) => stats[athleteId]?.version === 6 && stats[athleteId].status !== "ready");
-    if (hasPendingWork) schedulePersonalStatsStep(personalStatsStepMs);
+    if (hasPendingWork) schedulePersonalStatsStep(personalStatsStepDelay());
   }
 }
 
