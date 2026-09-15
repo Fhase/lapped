@@ -35,6 +35,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectForm.hidden = true;
   consentBox.hidden = true;
   disconnect.hidden = false;
+  connectedOverview.classList.add("stats-loading");
   if (localPreview) {
     disconnect.hidden = true;
     lifetimeLaps.textContent = "—";
@@ -52,6 +53,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
       lapStatsStatus.textContent = "Your lap stats are loading slowly in the background. Come back in a while.";
       return;
     }
+    connectedOverview.classList.remove("stats-loading");
     lifetimeLaps.textContent = stats.lifetime ?? "—";
     ytdLaps.textContent = stats.ytd ?? "—";
     fastestLap.textContent = stats.fastestLap || "—";
