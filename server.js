@@ -39,6 +39,8 @@ const pendingOAuthStates = new Map();
 const defaultAdminAthleteHash = "cbed8490189459b6fb84700492174b34db9035e0cc8461fc5bf43a4fc1ecf4af";
 const adminCookieName = "lapped_admin";
 const adminCookieLifetimeMs = 30 * 24 * 60 * 60 * 1000;
+const identityCookieName = "lapped_identity";
+const identityCookieLifetimeMs = 365 * 24 * 60 * 60 * 1000;
 const oauthWindowMs = 10 * 60 * 1000;
 const oauthRequestsByIp = new Map();
 const featureRequestWindowMs = 60 * 60 * 1000;
@@ -86,6 +88,49 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000
   }
 }));
+
+function identitySignature(athleteId) {
+  return crypto.createHmac("sha256", sessionSecret).update(String(athleteId)).digest("hex");
+}
+
+function setIdentityCookie(res, athleteId) {
+  const id = String(athleteId || "");
+  if (!/^\d+$/.test(id)) return;
+  res.cookie(identityCookieName, `${id}.${identitySignature(id)}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: Boolean(process.env.RENDER_EXTERNAL_URL) || process.env.NODE_ENV === "production",
+    maxAge: identityCookieLifetimeMs,
+    path: "/"
+  });
+}
+
+function identityAthleteId(req) {
+  const value = cookieValue(req, identityCookieName) || "";
+  const [athleteId, signature] = value.split(".");
+  if (!/^\d+$/.test(athleteId || "") || !/^[a-f0-9]{64}$/.test(signature || "")) return null;
+  const expected = identitySignature(athleteId);
+  const valid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  return valid ? athleteId : null;
+}
+
+// Express's default session store is memory-only, so a normal deploy can lose
+// the browser session while the encrypted Strava token remains safely stored.
+// Recover only the athlete ID from a signed cookie, then load that existing
+// token; no OAuth request, token mutation, or connection change is performed.
+app.use(async (req, res, next) => {
+  if (!req.session.strava) {
+    const athleteId = identityAthleteId(req);
+    if (athleteId) {
+      try {
+        const token = (await readTokens())[athleteId];
+        if (token) req.session.strava = token;
+        else res.clearCookie(identityCookieName, { path: "/" });
+      } catch (error) { console.error("Identity session restore failed:", error.message); }
+    }
+  }
+  next();
+});
 // The Render service address is kept only for infrastructure compatibility.
 // Visitors always land on the owned Lapped domain. Webhooks stay reachable on
 // their registered callback while Strava's dashboard is being migrated.
