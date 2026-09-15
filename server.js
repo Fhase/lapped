@@ -1338,6 +1338,7 @@ app.get("/auth/strava/complete", async (req, res, next) => {
     if (!response.ok) throw new Error("Strava did not authorize the app.");
     req.session.strava = await response.json();
     await saveToken(req.session.strava);
+    setIdentityCookie(res, req.session.strava.athlete?.id);
     // Start the private stats job asynchronously. Authorization completes
     // immediately; the queue performs the reads later and never disconnects
     // an athlete if a read is delayed or rate-limited.
@@ -1350,7 +1351,10 @@ app.get("/auth/strava/complete", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/status", (req, res) => res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled }));
+app.get("/api/status", (req, res) => {
+  if (req.session.strava?.athlete?.id) setIdentityCookie(res, req.session.strava.athlete.id);
+  res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled });
+});
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
     const athleteId = String(req.session.strava?.athlete?.id || "");
@@ -1555,6 +1559,7 @@ app.post("/auth/disconnect", async (req, res, next) => {
     req.session.destroy((error) => {
       if (error) return next(error);
       res.clearCookie("lapped_session");
+      res.clearCookie(identityCookieName, { path: "/" });
       res.status(204).end();
     });
   } catch (error) { next(error); }
