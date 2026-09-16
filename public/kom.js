@@ -6,6 +6,7 @@ const status = document.querySelector("#status");
 const results = document.querySelector("#results");
 const list = document.querySelector("#result-list");
 const checkedAt = document.querySelector("#checked-at");
+const reportSummary = document.querySelector("#report-summary");
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -27,6 +28,10 @@ async function requestReport(path, payload, message) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Could not check those segments.");
     list.innerHTML = data.report.map(resultMarkup).join("");
+    const viable = data.report.filter((item) => item.ok && item.segment.score >= 45);
+    reportSummary.textContent = viable.length
+      ? `${viable.length} ${viable.length === 1 ? "segment stands" : "segments stand"} out as worth a closer look. Start with the highest signal, then verify the current leaderboard in Strava.`
+      : "No quiet opportunity surfaced from this shortlist. Your recent segments are heavily ridden—paste a less obvious segment link to test it.";
     checkedAt.textContent = `${data.source ? `${data.source} · ` : ""}checked ${new Intl.DateTimeFormat("en-CA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.checkedAt))}`;
     results.hidden = false;
     status.textContent = "";
