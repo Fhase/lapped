@@ -925,14 +925,13 @@ function komOpportunity(segment) {
   };
 }
 
-async function privateKomReport(athleteId, rawSegments) {
+async function privateKomReportWithToken(token, rawSegments) {
   const ids = [...new Set(rawSegments.map(komSegmentId).filter(Boolean))].slice(0, 12);
   if (!ids.length) {
     const error = new Error("Add at least one Strava segment link or segment ID.");
     error.status = 400;
     throw error;
   }
-  const token = await tokenForAthlete(athleteId);
   const report = [];
   for (const id of ids) {
     try {
@@ -943,6 +942,38 @@ async function privateKomReport(athleteId, rawSegments) {
     }
   }
   return report.sort((left, right) => (right.segment?.score || -1) - (left.segment?.score || -1));
+}
+
+async function privateKomReport(athleteId, rawSegments) {
+  return privateKomReportWithToken(await tokenForAthlete(athleteId), rawSegments);
+}
+
+async function suggestedKomSegments(token) {
+  // This is deliberately a small, transient scan of the owner's recent rides.
+  // It does not crawl a location, leaderboard, or other athletes' data.
+  const activities = await strava("/athlete/activities?per_page=8", stravaHeaders(token));
+  const frequency = new Map();
+  for (const summary of activities.filter((activity) => activity.type === "Ride" || activity.sport_type === "Ride")) {
+    try {
+      const activity = await strava(`/activities/${encodeURIComponent(summary.id)}?include_all_efforts=true`, stravaHeaders(token));
+      for (const effort of activity.segment_efforts || []) {
+        const segment = effort.segment || {};
+        const id = String(segment.id || effort.segment_id || "");
+        const distance = Number(segment.distance) || 0;
+        // Remove tiny GPS artefacts and very long route-scale segments. The
+        // remaining efforts make a practical short-list, not a city-wide crawl.
+        if (!/^\d+$/.test(id) || distance < 250 || distance > 6000) continue;
+        frequency.set(id, (frequency.get(id) || 0) + 1);
+      }
+    } catch (error) {
+      if (error.status === 429) throw error;
+      console.error(`KOM recent-ride read failed for ${summary.id}:`, error.message);
+    }
+  }
+  return [...frequency.entries()]
+    .sort((left, right) => right[1] - left[1] || Number(left[0]) - Number(right[0]))
+    .slice(0, 12)
+    .map(([id]) => id);
 }
 
 async function countSegmentEfforts(token, start, end) {
@@ -1520,6 +1551,18 @@ app.post("/api/kom/report", requireAdmin, async (req, res, next) => {
     const segments = Array.isArray(req.body?.segments) ? req.body.segments.slice(0, 12) : [];
     const report = await privateKomReport(String(req.adminAthleteId || ""), segments);
     res.json({ report, checkedAt: new Date().toISOString() });
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting requests. Try again in a few minutes." });
+    next(error);
+  }
+});
+app.post("/api/kom/suggested", requireAdmin, async (req, res, next) => {
+  try {
+    const token = await tokenForAthlete(String(req.adminAthleteId || ""));
+    const segments = await suggestedKomSegments(token);
+    if (!segments.length) return res.status(404).json({ error: "No usable segments were found in your eight most recent rides. Add links manually instead." });
+    const report = await privateKomReportWithToken(token, segments);
+    res.json({ report, source: "your recent rides", checkedAt: new Date().toISOString() });
   } catch (error) {
     if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting requests. Try again in a few minutes." });
     next(error);
