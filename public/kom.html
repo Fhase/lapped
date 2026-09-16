@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Lapped — KOM hunt</title>
+  <link rel="stylesheet" href="/kom.css" />
+</head>
+<body>
+  <main class="wrap">
+    <nav>
+      <a class="wordmark" href="/">Lapped</a>
+      <div class="nav-meta"><span>private tool</span><a href="/admin">admin</a></div>
+    </nav>
+
+    <header class="hero">
+      <p class="eyebrow">KOM hunt</p>
+      <h1>Find the<br><em>quiet ones.</em></h1>
+      <p class="lede">A private signal check for segments you already have your eye on. It reads only your own Strava account and never stores this report.</p>
+    </header>
+
+    <section class="composer" aria-labelledby="hunt-title">
+      <div>
+        <p class="eyebrow" id="hunt-title">your shortlist</p>
+        <p class="hint">Paste up to 12 Strava segment links, one per line. Segment IDs work too.</p>
+      </div>
+      <form id="kom-form">
+        <label class="sr-only" for="segments">Strava segment links</label>
+        <textarea id="segments" name="segments" rows="6" placeholder="https://www.strava.com/segments/12345678&#10;https://www.strava.com/segments/87654321" required></textarea>
+        <div class="form-footer">
+          <p>Signals use your PR, your attempts, and public segment traffic. It is not a KOM prediction.</p>
+          <button type="submit">Check segments <span>→</span></button>
+        </div>
+        <p class="status" id="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="results" id="results" hidden aria-live="polite">
+      <div class="results-head"><p class="eyebrow">opportunity report</p><p id="checked-at"></p></div>
+      <div id="result-list"></div>
+    </section>
+
+    <section class="method">
+      <p class="eyebrow">how to read it</p>
+      <p>Higher scores mean a segment has fewer recorded attempts and riders, plus a real personal baseline. The score does not know the current KOM time, wind, traffic, or who will ride tomorrow—use it to choose where to look, then verify in Strava.</p>
+    </section>
+    <footer>Lapped 2026 · private owner tool</footer>
+  </main>
+  <script type="module" src="/kom.js"></script>
+</body>
+</html>
