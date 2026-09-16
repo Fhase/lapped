@@ -65,7 +65,9 @@ function personalStatsStepDelay() {
 const personalStatsRetentionMs = 7 * 24 * 60 * 60 * 1000;
 let personalStatsTimer = null;
 let personalStatsBusy = false;
-const komHistoryStepMs = 30 * 1000;
+// Private owner-only backfill. Five seconds is 180 reads per 15 minutes,
+// leaving headroom for normal Lapped activity processing.
+const komHistoryStepMs = 5 * 1000;
 let komHistoryTimer = null;
 let komHistoryBusy = false;
 
