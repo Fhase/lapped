@@ -1056,7 +1056,12 @@ async function runKomHistoryStep() {
 
 function komHistorySummary(job) {
   if (!job) return { status: "idle" };
-  const candidates = Object.values(job.candidates || {}).sort((a, b) => a.rank - b.rank).slice(0, 50);
+  // The useful hunt zone is just outside the familiar top-ten view: close
+  // enough to be realistic, but not already visible in Strava by default.
+  const candidates = Object.values(job.candidates || {})
+    .filter((candidate) => candidate.rank >= 11 && candidate.rank <= 50)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 50);
   return { status: job.status, phase: job.status === "listing" ? "listing rides" : job.status === "scanning" ? "reading segment ranks" : "ready", ridesFound: job.activityIds?.length || 0, ridesScanned: job.index || 0, candidates, updatedAt: job.updatedAt || null };
 }
 
