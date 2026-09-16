@@ -24,6 +24,7 @@ const lapStatsStore = path.join(dataDir, "lap-stats.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
 const featureRequestsStore = path.join(dataDir, "feature-requests.json");
 const waitlistStore = path.join(dataDir, "waitlist.json");
+const komHistoryStore = path.join(dataDir, "kom-history.json");
 // Retained only long enough to clear the retired leaderboard cache on deploy.
 // It never contains tokens and clearing it never changes a connection.
 const legacyLeaderboardStore = path.join(dataDir, "leaderboard.json");
@@ -64,6 +65,9 @@ function personalStatsStepDelay() {
 const personalStatsRetentionMs = 7 * 24 * 60 * 60 * 1000;
 let personalStatsTimer = null;
 let personalStatsBusy = false;
+const komHistoryStepMs = 30 * 1000;
+let komHistoryTimer = null;
+let komHistoryBusy = false;
 
 // Render terminates TLS before forwarding requests to this process. Trust that
 // single proxy so secure session cookies are issued to the browser correctly.
@@ -318,6 +322,8 @@ async function removeConnectedAthlete(athleteId) {
   delete tokens[athleteId];
   await writeEncryptedStore(tokenStore, tokens);
   await clearLapStats(athleteId);
+  const komHistory = await readEncryptedStore(komHistoryStore);
+  if (komHistory[athleteId]) { delete komHistory[athleteId]; await writeEncryptedStore(komHistoryStore, komHistory); }
   const legacy = await readEncryptedStore(legacyLeaderboardStore);
   if (legacy.athletes?.[athleteId]) {
     delete legacy.athletes[athleteId];
@@ -983,6 +989,82 @@ async function suggestedKomSegments(token) {
     .map(([id]) => id);
 }
 
+async function readKomHistory() { return readEncryptedStore(komHistoryStore); }
+
+function scheduleKomHistoryStep(delay = komHistoryStepMs) {
+  if (komHistoryTimer || komHistoryBusy) return;
+  komHistoryTimer = setTimeout(() => {
+    komHistoryTimer = null;
+    runKomHistoryStep().catch((error) => console.error("KOM history scan failed:", error.message));
+  }, delay);
+  komHistoryTimer.unref?.();
+}
+
+async function startKomHistoryScan(athleteId) {
+  const all = await readKomHistory();
+  const current = all[athleteId];
+  if (!current || !["listing", "scanning"].includes(current.status)) {
+    all[athleteId] = { version: 1, status: "listing", page: 1, activityIds: [], index: 0, candidates: {}, startedAt: Date.now(), updatedAt: Date.now() };
+    await writeEncryptedStore(komHistoryStore, all);
+  }
+  scheduleKomHistoryStep(0);
+  return all[athleteId];
+}
+
+async function runKomHistoryStep() {
+  if (komHistoryBusy) return;
+  komHistoryBusy = true;
+  try {
+    const all = await readKomHistory();
+    const next = Object.entries(all).find(([, job]) => job?.version === 1 && ["listing", "scanning"].includes(job.status));
+    if (!next) return;
+    const [athleteId, job] = next;
+    const token = await tokenForAthlete(athleteId);
+    if (job.status === "listing") {
+      const batch = await strava(`/athlete/activities?page=${job.page}&per_page=200`, stravaHeaders(token));
+      job.activityIds.push(...batch.filter((item) => item.type === "Ride" || item.sport_type === "Ride").map((item) => String(item.id)));
+      job.page += 1;
+      if (batch.length < 200) job.status = "scanning";
+    } else {
+      const activityId = job.activityIds[job.index];
+      if (!activityId) job.status = "ready";
+      else {
+        const activity = await strava(`/activities/${encodeURIComponent(activityId)}?include_all_efforts=true`, stravaHeaders(token));
+        for (const effort of activity.segment_efforts || []) {
+          const rank = Number(effort.kom_rank);
+          const segment = effort.segment || {};
+          const id = String(segment.id || effort.segment_id || "");
+          if (!/^\d+$/.test(id) || !Number.isFinite(rank) || rank < 1) continue;
+          const prior = job.candidates[id];
+          if (!prior || rank < prior.rank) job.candidates[id] = { id, rank, name: String(segment.name || "Unnamed segment"), distance: Number(segment.distance) || 0, grade: Number(segment.average_grade ?? segment.avg_grade) || 0 };
+        }
+        job.index += 1;
+      }
+    }
+    job.updatedAt = Date.now();
+    all[athleteId] = job;
+    await writeEncryptedStore(komHistoryStore, all);
+  } catch (error) { console.error("KOM history step failed:", error.message); }
+  finally {
+    komHistoryBusy = false;
+    const all = await readKomHistory();
+    if (Object.values(all).some((job) => ["listing", "scanning"].includes(job?.status))) scheduleKomHistoryStep();
+  }
+}
+
+function komHistorySummary(job) {
+  if (!job) return { status: "idle" };
+  const candidates = Object.values(job.candidates || {}).sort((a, b) => a.rank - b.rank).slice(0, 50);
+  return { status: job.status, phase: job.status === "listing" ? "listing rides" : job.status === "scanning" ? "reading segment ranks" : "ready", ridesFound: job.activityIds?.length || 0, ridesScanned: job.index || 0, candidates, updatedAt: job.updatedAt || null };
+}
+
+async function pruneKomHistory() {
+  const all = await readKomHistory();
+  const cutoff = Date.now() - activityCacheRetentionMs;
+  const kept = Object.fromEntries(Object.entries(all).filter(([, job]) => Number(job?.updatedAt || job?.startedAt || 0) >= cutoff));
+  if (JSON.stringify(all) !== JSON.stringify(kept)) await writeEncryptedStore(komHistoryStore, kept);
+}
+
 async function countSegmentEfforts(token, start, end) {
   const pageSize = 200;
   const seenEfforts = new Set();
@@ -1575,6 +1657,12 @@ app.post("/api/kom/suggested", requireAdmin, async (req, res, next) => {
     next(error);
   }
 });
+app.post("/api/kom/history/start", requireAdmin, async (req, res, next) => {
+  try { res.json(komHistorySummary(await startKomHistoryScan(String(req.adminAthleteId || "")))); } catch (error) { next(error); }
+});
+app.get("/api/kom/history", requireAdmin, async (req, res, next) => {
+  try { res.json(komHistorySummary((await readKomHistory())[String(req.adminAthleteId || "")])); } catch (error) { next(error); }
+});
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
@@ -1738,9 +1826,11 @@ app.post("/webhook", (req, res) => {
 app.use((error, _req, res, _next) => res.status(400).json({ error: error.message || "Something went wrong." }));
 async function startServer() {
   await pruneStravaCaches();
+  await pruneKomHistory();
   await queueConnectedPersonalStats();
   const cachePruner = setInterval(() => {
     pruneStravaCaches()
+      .then(pruneKomHistory)
       .then(queueConnectedPersonalStats)
       .catch((error) => console.error("Strava cache cleanup failed:", error.message));
   }, 24 * 60 * 60 * 1000);
