@@ -7,6 +7,9 @@ const results = document.querySelector("#results");
 const list = document.querySelector("#result-list");
 const checkedAt = document.querySelector("#checked-at");
 const reportSummary = document.querySelector("#report-summary");
+const historyStart = document.querySelector("#history-start");
+const historyStatus = document.querySelector("#history-status");
+const historyList = document.querySelector("#history-list");
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -50,3 +53,34 @@ form.addEventListener("submit", async (event) => {
 generate.addEventListener("click", () => {
   requestReport("/api/kom/suggested", {}, "Reading your recent rides and building a shortlist…");
 });
+
+function renderHistory(data) {
+  if (data.status === "idle") { historyStatus.textContent = "Not started."; return; }
+  historyStatus.textContent = data.status === "ready"
+    ? `${data.ridesScanned.toLocaleString()} rides scanned · ${data.candidates.length} ranked segments found.`
+    : `${data.phase} · ${data.ridesScanned.toLocaleString()} of ${data.ridesFound.toLocaleString()} rides scanned. It will keep going in the background.`;
+  historyStart.disabled = data.status !== "ready";
+  historyStart.textContent = data.status === "ready" ? "Scan complete" : "Scanning…";
+  historyList.innerHTML = data.candidates.slice(0, 10).map((item) => `<div class="history-row"><span>${escapeHtml(item.name)}</span><strong>#${item.rank.toLocaleString()}</strong></div>`).join("");
+}
+
+async function pollHistory() {
+  try {
+    const response = await fetch("/api/kom/history");
+    if (!response.ok) return;
+    const data = await response.json();
+    renderHistory(data);
+    if (["listing", "scanning"].includes(data.status)) setTimeout(pollHistory, 15000);
+  } catch (_) {}
+}
+
+historyStart.addEventListener("click", async () => {
+  historyStart.disabled = true;
+  try {
+    const response = await fetch("/api/kom/history/start", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not start the history scan.");
+    renderHistory(data); pollHistory();
+  } catch (error) { historyStatus.textContent = error.message; historyStart.disabled = false; }
+});
+pollHistory();
