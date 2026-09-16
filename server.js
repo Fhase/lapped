@@ -590,6 +590,9 @@ function adminPage(tokens, analytics, { page, query }) {
 async function requireAdmin(req, res, next) {
   try {
     if (hasValidAdminCookie(req)) {
+      const encoded = req.headers.cookie?.split(";").map((part) => part.trim())
+        .find((part) => part.startsWith(`${adminCookieName}=`))?.slice(adminCookieName.length + 1);
+      req.adminAthleteId = decodeURIComponent(encoded || "").split(".")[0] || null;
       await excludeAdminFromAnalytics(req, res);
       req.connectedTokens = await readTokens();
       return next();
@@ -601,6 +604,7 @@ async function requireAdmin(req, res, next) {
     const sessionAthleteId = String(req.session.strava.athlete?.id || "");
     if (!isAdminAthlete(sessionAthleteId)) return res.status(403).send("Admin access is not available for this Strava account.");
     setAdminCookie(res, sessionAthleteId);
+    req.adminAthleteId = sessionAthleteId;
     await excludeAdminFromAnalytics(req, res);
     const tokens = await readTokens();
     req.connectedTokens = tokens;
@@ -857,6 +861,88 @@ const lapStatsCacheMs = 24 * 60 * 60 * 1000;
 
 function stravaHeaders(token) {
   return { headers: { Authorization: `Bearer ${token}` } };
+}
+
+function komSegmentId(value) {
+  const raw = String(value || "").trim();
+  if (/^\d{4,}$/.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || !/(^|\.)strava\.com$/i.test(url.hostname)) return null;
+    return url.pathname.match(/^\/segments\/(\d+)(?:\/|$)/)?.[1] || null;
+  } catch {
+    return null;
+  }
+}
+
+function formatKomDuration(seconds) {
+  const rounded = Math.round(Number(seconds));
+  if (!Number.isFinite(rounded) || rounded <= 0) return null;
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, "0")}`;
+}
+
+function komOpportunity(segment) {
+  const mine = segment.athlete_segment_stats || {};
+  const attempts = Math.max(0, Number(segment.effort_count) || 0);
+  const riders = Math.max(0, Number(segment.athlete_count) || 0);
+  const myEfforts = Math.max(0, Number(mine.effort_count) || 0);
+  const distanceKm = Math.max(0, Number(segment.distance) || 0) / 1000;
+  const grade = Number(segment.avg_grade) || 0;
+  let score = 32;
+  const reasons = [];
+
+  if (Number(mine.pr_elapsed_time) > 0) { score += 23; reasons.push("you already have a recorded PR"); }
+  else reasons.push("ride it once to establish a baseline");
+  if (myEfforts >= 3) { score += 8; reasons.push(`${myEfforts} personal attempts to learn the segment`); }
+  else if (myEfforts > 0) reasons.push(`${myEfforts} personal attempt${myEfforts === 1 ? "" : "s"}`);
+
+  if (attempts > 0 && attempts <= 500) { score += 22; reasons.push(`${attempts.toLocaleString()} recorded attempts — lower traffic`); }
+  else if (attempts > 0 && attempts <= 1500) { score += 12; reasons.push(`${attempts.toLocaleString()} recorded attempts — moderate traffic`); }
+  else if (attempts > 0) { score -= 6; reasons.push(`${attempts.toLocaleString()} recorded attempts — busy segment`); }
+
+  if (riders > 0 && riders <= 250) { score += 12; reasons.push(`${riders.toLocaleString()} riders have attempted it`); }
+  else if (riders > 0 && riders <= 1000) score += 5;
+  if (distanceKm > 0 && distanceKm <= 2) { score += 5; reasons.push(`${distanceKm.toFixed(1)} km — a focused effort`); }
+  if (Math.abs(grade) <= 2) reasons.push(`${grade.toFixed(1)}% average grade`);
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const band = score >= 75 ? "promising opportunity" : score >= 55 ? "worth a look" : "needs more context";
+  const prSeconds = Number(mine.pr_elapsed_time) || null;
+  return {
+    id: String(segment.id),
+    name: String(segment.name || "Unnamed segment"),
+    distanceKm,
+    grade,
+    elevationGain: Math.max(0, Number(segment.total_elevation_gain) || 0),
+    totalAttempts: attempts,
+    athleteCount: riders,
+    yourEfforts: myEfforts,
+    pr: formatKomDuration(prSeconds),
+    prSpeed: prSeconds && distanceKm ? `${(distanceKm / (prSeconds / 3600)).toFixed(1)} km/h` : null,
+    score,
+    band,
+    reasons: reasons.slice(0, 4)
+  };
+}
+
+async function privateKomReport(athleteId, rawSegments) {
+  const ids = [...new Set(rawSegments.map(komSegmentId).filter(Boolean))].slice(0, 12);
+  if (!ids.length) {
+    const error = new Error("Add at least one Strava segment link or segment ID.");
+    error.status = 400;
+    throw error;
+  }
+  const token = await tokenForAthlete(athleteId);
+  const report = [];
+  for (const id of ids) {
+    try {
+      const segment = await strava(`/segments/${encodeURIComponent(id)}`, stravaHeaders(token));
+      report.push({ ok: true, segment: komOpportunity(segment) });
+    } catch (error) {
+      report.push({ ok: false, id, error: error.status === 404 ? "Segment unavailable to your account." : "Could not check this segment right now." });
+    }
+  }
+  return report.sort((left, right) => (right.segment?.score || -1) - (left.segment?.score || -1));
 }
 
 async function countSegmentEfforts(token, start, end) {
@@ -1426,6 +1512,19 @@ app.post("/api/feature-requests", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
+app.get("/kom", requireAdmin, (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "public", "kom.html"));
+});
+app.post("/api/kom/report", requireAdmin, async (req, res, next) => {
+  try {
+    const segments = Array.isArray(req.body?.segments) ? req.body.segments.slice(0, 12) : [];
+    const report = await privateKomReport(String(req.adminAthleteId || ""), segments);
+    res.json({ report, checkedAt: new Date().toISOString() });
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting requests. Try again in a few minutes." });
+    next(error);
+  }
+});
 app.get("/admin", requireAdmin, async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
