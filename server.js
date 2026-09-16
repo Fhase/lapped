@@ -888,25 +888,28 @@ function komOpportunity(segment) {
   const myEfforts = Math.max(0, Number(mine.effort_count) || 0);
   const distanceKm = Math.max(0, Number(segment.distance) || 0) / 1000;
   const grade = Number(segment.avg_grade) || 0;
-  let score = 32;
+  let score = 10;
   const reasons = [];
 
-  if (Number(mine.pr_elapsed_time) > 0) { score += 23; reasons.push("you already have a recorded PR"); }
+  if (Number(mine.pr_elapsed_time) > 0) { score += 20; reasons.push("you already have a recorded PR"); }
   else reasons.push("ride it once to establish a baseline");
-  if (myEfforts >= 3) { score += 8; reasons.push(`${myEfforts} personal attempts to learn the segment`); }
+  if (myEfforts >= 3) { score += 6; reasons.push(`${myEfforts} personal attempts to learn the segment`); }
   else if (myEfforts > 0) reasons.push(`${myEfforts} personal attempt${myEfforts === 1 ? "" : "s"}`);
 
-  if (attempts > 0 && attempts <= 500) { score += 22; reasons.push(`${attempts.toLocaleString()} recorded attempts — lower traffic`); }
-  else if (attempts > 0 && attempts <= 1500) { score += 12; reasons.push(`${attempts.toLocaleString()} recorded attempts — moderate traffic`); }
-  else if (attempts > 0) { score -= 6; reasons.push(`${attempts.toLocaleString()} recorded attempts — busy segment`); }
+  if (attempts > 0 && attempts <= 500) { score += 45; reasons.push(`${attempts.toLocaleString()} recorded attempts — low traffic`); }
+  else if (attempts > 0 && attempts <= 1500) { score += 30; reasons.push(`${attempts.toLocaleString()} recorded attempts — moderate traffic`); }
+  else if (attempts > 0 && attempts <= 10000) { score += 10; reasons.push(`${attempts.toLocaleString()} recorded attempts — established segment`); }
+  else if (attempts > 0 && attempts <= 100000) { score -= 10; reasons.push(`${attempts.toLocaleString()} recorded attempts — busy segment`); }
+  else if (attempts > 0) { score -= 28; reasons.push(`${attempts.toLocaleString()} recorded attempts — extremely busy`); }
 
-  if (riders > 0 && riders <= 250) { score += 12; reasons.push(`${riders.toLocaleString()} riders have attempted it`); }
-  else if (riders > 0 && riders <= 1000) score += 5;
+  if (riders > 0 && riders <= 250) { score += 20; reasons.push(`${riders.toLocaleString()} riders have attempted it`); }
+  else if (riders > 0 && riders <= 1000) score += 10;
+  else if (riders > 10000) score -= 12;
   if (distanceKm > 0 && distanceKm <= 2) { score += 5; reasons.push(`${distanceKm.toFixed(1)} km — a focused effort`); }
   if (Math.abs(grade) <= 2) reasons.push(`${grade.toFixed(1)}% average grade`);
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  const band = score >= 75 ? "promising opportunity" : score >= 55 ? "worth a look" : "needs more context";
+  const band = score >= 75 ? "quiet opportunity" : score >= 45 ? "worth a look" : "crowded segment";
   const prSeconds = Number(mine.pr_elapsed_time) || null;
   return {
     id: String(segment.id),
