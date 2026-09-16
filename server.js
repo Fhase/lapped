@@ -1830,6 +1830,7 @@ async function startServer() {
   await pruneStravaCaches();
   await pruneKomHistory();
   await queueConnectedPersonalStats();
+  scheduleKomHistoryStep(0);
   const cachePruner = setInterval(() => {
     pruneStravaCaches()
       .then(pruneKomHistory)
