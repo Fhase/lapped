@@ -17,20 +17,20 @@
     <header class="hero">
       <p class="eyebrow">KOM hunt</p>
       <h1>Find the<br><em>quiet ones.</em></h1>
-      <p class="lede">A private signal check for segments you already have your eye on. It reads only your own Strava account and never stores this report.</p>
+      <p class="lede">A private report from your recent rides, built to surface quieter segments you already know. It reads only your own Strava account and never stores the report.</p>
     </header>
 
     <section class="composer" aria-labelledby="hunt-title">
       <div>
         <p class="eyebrow" id="hunt-title">your shortlist</p>
-        <p class="hint">Paste up to 12 Strava segment links, one per line. Segment IDs work too.</p>
+        <p class="hint">Generate a shortlist from your recent rides, or paste up to 12 Strava segment links. Segment IDs work too.</p>
       </div>
       <form id="kom-form">
         <label class="sr-only" for="segments">Strava segment links</label>
         <textarea id="segments" name="segments" rows="6" placeholder="https://www.strava.com/segments/12345678&#10;https://www.strava.com/segments/87654321" required></textarea>
         <div class="form-footer">
           <p>Signals use your PR, your attempts, and public segment traffic. It is not a KOM prediction.</p>
-          <button type="submit">Check segments <span>→</span></button>
+          <div class="actions"><button type="button" class="quiet-button" id="generate">Generate report</button><button type="submit">Check segments <span>→</span></button></div>
         </div>
         <p class="status" id="status" aria-live="polite"></p>
       </form>
