@@ -23,13 +23,13 @@
     <section class="composer" aria-labelledby="hunt-title">
       <div>
         <p class="eyebrow" id="hunt-title">your shortlist</p>
-        <p class="hint">Generate a shortlist from your recent rides, or paste up to 12 Strava segment links. Segment IDs work too.</p>
+        <p class="hint">Generate a shortlist from your recent rides, or paste up to 12 Strava segment links—including ones you have never ridden. Segment IDs work too.</p>
       </div>
       <form id="kom-form">
         <label class="sr-only" for="segments">Strava segment links</label>
         <textarea id="segments" name="segments" rows="6" placeholder="https://www.strava.com/segments/12345678&#10;https://www.strava.com/segments/87654321" required></textarea>
         <div class="form-footer">
-          <p>Signals use your PR, your attempts, and public segment traffic. It is not a KOM prediction.</p>
+          <p>Signals use your PR when you have one, plus public segment traffic. New-to-you segments get a discovery signal, not a KOM prediction.</p>
           <div class="actions"><button type="button" class="quiet-button" id="generate">Generate report</button><button type="submit">Check segments <span>→</span></button></div>
         </div>
         <p class="status" id="status" aria-live="polite"></p>
@@ -38,6 +38,7 @@
 
     <section class="results" id="results" hidden aria-live="polite">
       <div class="results-head"><p class="eyebrow">opportunity report</p><p id="checked-at"></p></div>
+      <p class="report-summary" id="report-summary"></p>
       <div id="result-list"></div>
     </section>
 

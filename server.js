@@ -883,6 +883,7 @@ function formatKomDuration(seconds) {
 
 function komOpportunity(segment) {
   const mine = segment.athlete_segment_stats || {};
+  const hasPr = Number(mine.pr_elapsed_time) > 0;
   const attempts = Math.max(0, Number(segment.effort_count) || 0);
   const riders = Math.max(0, Number(segment.athlete_count) || 0);
   const myEfforts = Math.max(0, Number(mine.effort_count) || 0);
@@ -891,7 +892,7 @@ function komOpportunity(segment) {
   let score = 10;
   const reasons = [];
 
-  if (Number(mine.pr_elapsed_time) > 0) { score += 20; reasons.push("you already have a recorded PR"); }
+  if (hasPr) { score += 20; reasons.push("you already have a recorded PR"); }
   else reasons.push("ride it once to establish a baseline");
   if (myEfforts >= 3) { score += 6; reasons.push(`${myEfforts} personal attempts to learn the segment`); }
   else if (myEfforts > 0) reasons.push(`${myEfforts} personal attempt${myEfforts === 1 ? "" : "s"}`);
@@ -908,6 +909,9 @@ function komOpportunity(segment) {
   if (distanceKm > 0 && distanceKm <= 2) { score += 5; reasons.push(`${distanceKm.toFixed(1)} km — a focused effort`); }
   if (Math.abs(grade) <= 2) reasons.push(`${grade.toFixed(1)}% average grade`);
 
+  // A quiet segment is still only a lead if the athlete has never ridden it.
+  // Cap the visual signal until there is a personal baseline to compare.
+  if (!hasPr) score = Math.min(score, 70);
   score = Math.max(0, Math.min(100, Math.round(score)));
   const band = score >= 75 ? "quiet opportunity" : score >= 45 ? "worth a look" : "crowded segment";
   const prSeconds = Number(mine.pr_elapsed_time) || null;
