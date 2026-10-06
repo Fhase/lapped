@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import express from "express";
 import session from "express-session";
-import { formatReceipt, receiptSiteUrl } from "./public/description-format.js";
+import { defaultDescriptionPreferences, formatReceipt, normalizeDescriptionPreferences, receiptSiteUrl } from "./public/description-format.js";
 
 const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT_ID"];
 const configError = required.filter((name) => !process.env[name]).join(", ");
@@ -21,6 +21,7 @@ const lapStatsEnabled = true;
 const dataDir = process.env.DATA_DIR || new URL("./data", import.meta.url).pathname;
 const tokenStore = path.join(dataDir, "tokens.json");
 const lapStatsStore = path.join(dataDir, "lap-stats.json");
+const descriptionPreferencesStore = path.join(dataDir, "description-preferences.json");
 const analyticsStore = path.join(dataDir, "analytics.json");
 const featureRequestsStore = path.join(dataDir, "feature-requests.json");
 const waitlistStore = path.join(dataDir, "waitlist.json");
@@ -213,6 +214,9 @@ app.use((req, res, next) => {
   }
   next();
 });
+// Keep the account-settings document behind the authenticated /me route even
+// though its stylesheet and script are public static assets.
+app.get("/me.html", (_req, res) => res.redirect("/me"));
 app.use(express.static("public"));
 
 const strava = async (path, options = {}) => {
@@ -271,6 +275,19 @@ async function saveToken(token) {
   return writeEncryptedStore(tokenStore, tokens);
 }
 
+async function descriptionPreferencesFor(athleteId) {
+  const stored = await readEncryptedStore(descriptionPreferencesStore);
+  return normalizeDescriptionPreferences(stored[String(athleteId)] || defaultDescriptionPreferences);
+}
+
+async function saveDescriptionPreferences(athleteId, value) {
+  const stored = await readEncryptedStore(descriptionPreferencesStore);
+  const preferences = normalizeDescriptionPreferences(value);
+  stored[String(athleteId)] = preferences;
+  await writeEncryptedStore(descriptionPreferencesStore, stored);
+  return preferences;
+}
+
 async function saveFeatureRequest(text) {
   const stored = await readEncryptedStore(featureRequestsStore);
   const requests = Array.isArray(stored) ? stored : [];
@@ -323,6 +340,11 @@ async function removeConnectedAthlete(athleteId) {
   const tokens = await readTokens();
   delete tokens[athleteId];
   await writeEncryptedStore(tokenStore, tokens);
+  const preferences = await readEncryptedStore(descriptionPreferencesStore);
+  if (preferences[athleteId]) {
+    delete preferences[athleteId];
+    await writeEncryptedStore(descriptionPreferencesStore, preferences);
+  }
   await clearLapStats(athleteId);
   const komHistory = await readEncryptedStore(komHistoryStore);
   if (komHistory[athleteId]) { delete komHistory[athleteId]; await writeEncryptedStore(komHistoryStore, komHistory); }
@@ -616,6 +638,17 @@ async function requireAdmin(req, res, next) {
     await excludeAdminFromAnalytics(req, res);
     const tokens = await readTokens();
     req.connectedTokens = tokens;
+    next();
+  } catch (error) { next(error); }
+}
+
+async function requireConnectedAthlete(req, res, next) {
+  try {
+    const athleteId = String(req.session.strava?.athlete?.id || "");
+    if (!/^\d+$/.test(athleteId)) return res.status(401).json({ error: "Connect Strava to manage your description." });
+    const token = (await readTokens())[athleteId];
+    if (!token) return res.status(401).json({ error: "This Strava connection is no longer available." });
+    req.connectedAthleteId = athleteId;
     next();
   } catch (error) { next(error); }
 }
@@ -1303,16 +1336,17 @@ function formatFastestLap(efforts) {
 
 function hasLappedReceipt(description) {
   const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
-  const receiptLine = `(?:(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}|(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::|\\s·\\s*)[^\\r\\n]+|lifetime laps:\\s*\\d+|\\d{4} laps:\\s*\\d+)`;
+  const receiptLine = `(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}`;
+  const fastestLine = `(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::|\\s·\\s*)[^\\r\\n]+`;
   const receiptSite = "(?:https?:\\/\\/)?(?:www\\.)?(?:lapped\\.fit|lapped\\.onrender\\.com)";
-  return new RegExp(`(?:^|\\r?\\n)(?:${receiptLine})(?:\\r?\\n[^\\r\\n]+){0,4}\\r?\\n${receiptSite}(?=\\r?\\n|$)|(?:^|\\r?\\n)high park laps:\\s*\\d+(?=\\r?\\n|$)`, "i").test(String(description || ""));
+  return new RegExp(`(?:^|\\r?\\n)${receiptLine}(?:\\r?\\n${fastestLine})?(?:\\r?\\n${receiptSite})?(?=\\r?\\n|$)|(?:^|\\r?\\n)high park laps:\\s*\\d+(?=\\r?\\n|$)`, "i").test(String(description || ""));
 }
 
 function removeLappedReceipt(description) {
   const receiptSite = `(?:https?:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")})`;
   const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
   return String(description || "")
-    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::\\s*|\\s·\\s*)[^\\n]+)?\\n${receiptSite}(?=\\n|$)`, "gi"), "")
+    .replace(new RegExp(`(?:^|\\n)(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}(?:\\n(?:fastest lap|ꜰᴀꜱᴛᴇꜱᴛ ʟᴀᴘ|𝚏𝚊𝚜𝚝𝚎𝚜𝚝 𝚕𝚊𝚙)(?::\\s*|\\s·\\s*)[^\\n]+)?(?:\\n${receiptSite})?(?=\\n|$)`, "gi"), "")
     .replace(/(?:^|\n)High Park laps: \d+(?=\n|$)/g, "")
     .replace(new RegExp(`(?:^|\\n)Loops: \\d+(?:\\n(?:https:\\/\\/)?${legacyReceiptHost.replace(/\\./g, "\\\\.")})?(?=\\n|$)`, "gi"), "")
     .replace(new RegExp(`(?:^|\\n)Laps: \\d+(?:\\nfastest lap: [^\\n]+)?(?:\\n(?:https:\\/\\/)?(?:(?:www\\.)?${legacyReceiptHost.replace(/\\./g, "\\\\.")}|(?:www\\.)?${publicSiteHost.replace(/\\./g, "\\\\.")}))?(?=\\n|$)`, "gi"), "")
@@ -1474,7 +1508,8 @@ async function scanActivityWithToken(token, activityId, athleteId, { retryIfProc
   const fastestLap = formatFastestLap(targetEfforts);
   const stamp = formatReceipt({
     lapCount,
-    fastestLap
+    fastestLap,
+    preferences: await descriptionPreferencesFor(athleteId)
   });
   // Do not overwrite the user's writing. The app replaces only its own stamp,
   // including the older High Park laps format already written to past rides.
@@ -1504,7 +1539,11 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   const lapCount = targetEfforts.length;
   if (!lapCount) return { lapCount: 0, changed: false, description: activity.description ?? "" };
 
-  const stamp = formatReceipt({ lapCount, fastestLap: formatFastestLap(targetEfforts) });
+  const stamp = formatReceipt({
+    lapCount,
+    fastestLap: formatFastestLap(targetEfforts),
+    preferences: await descriptionPreferencesFor(athleteId)
+  });
   const description = [removeLappedReceipt(activity.description), stamp].filter(Boolean).join("\n");
   if (description === (activity.description ?? "")) return { lapCount, changed: false, description };
   if (!(await athleteIsStillConnected(athleteId))) return { lapCount, changed: false, description: activity.description ?? "" };
@@ -1572,6 +1611,19 @@ app.get("/auth/strava/complete", async (req, res, next) => {
 app.get("/api/status", (req, res) => {
   if (req.session.strava?.athlete?.id) setIdentityCookie(res, req.session.strava.athlete.id);
   res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled });
+});
+app.get("/me", (req, res) => {
+  if (!req.session.strava?.athlete?.id) return res.redirect("/?next=%2Fme#connect-card");
+  res.sendFile(path.join(process.cwd(), "public", "me.html"));
+});
+app.get("/api/description-preferences", requireConnectedAthlete, async (req, res, next) => {
+  try { res.json({ preferences: await descriptionPreferencesFor(req.connectedAthleteId) }); } catch (error) { next(error); }
+});
+app.put("/api/description-preferences", requireConnectedAthlete, async (req, res, next) => {
+  try {
+    const preferences = await saveDescriptionPreferences(req.connectedAthleteId, req.body?.preferences || {});
+    res.json({ ok: true, preferences });
+  } catch (error) { next(error); }
 });
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
