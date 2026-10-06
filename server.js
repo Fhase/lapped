@@ -216,7 +216,7 @@ app.use((req, res, next) => {
 });
 // Keep the account-settings document behind the authenticated /me route even
 // though its stylesheet and script are public static assets.
-app.get("/me.html", (_req, res) => res.redirect("/me"));
+app.get("/me.html", (_req, res) => res.sendStatus(404));
 app.use(express.static("public"));
 
 const strava = async (path, options = {}) => {
@@ -1613,8 +1613,7 @@ app.get("/api/status", (req, res) => {
   res.json({ connected: Boolean(req.session.strava), athlete: req.session.strava?.athlete || null, configured: !configError, segmentId: segmentId || null, lapStatsEnabled });
 });
 app.get("/me", (req, res) => {
-  if (!req.session.strava?.athlete?.id) return res.redirect("/?next=%2Fme#connect-card");
-  res.sendFile(path.join(process.cwd(), "public", "me.html"));
+  res.sendStatus(404);
 });
 app.get("/api/description-preferences", requireConnectedAthlete, async (req, res, next) => {
   try { res.json({ preferences: await descriptionPreferencesFor(req.connectedAthleteId) }); } catch (error) { next(error); }

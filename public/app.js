@@ -39,7 +39,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   consentBox.hidden = true;
   disconnect.hidden = false;
   connectedStatus.hidden = false;
-  if (meLink) meLink.hidden = false;
+  if (meLink) meLink.hidden = true;
   connectedOverview.classList.add("stats-loading");
   [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.add("stat-loading"));
   if (localPreview) {
