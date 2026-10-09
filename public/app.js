@@ -8,7 +8,6 @@ const formatKm = (laps, partial = false) => `${Math.round(Number(laps) * 1.85).t
 const lapLink = document.querySelector("#lap-link");
 const themeToggle = document.querySelector("#theme-toggle"), themeLabel = document.querySelector("#theme-label");
 const connectForm = document.querySelector("#connect-form"), consentBox = document.querySelector("#consent-box"), privacyConsent = document.querySelector("#privacy-consent");
-const meLink = document.querySelector("#me-link");
 
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -39,7 +38,6 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   consentBox.hidden = true;
   disconnect.hidden = false;
   connectedStatus.hidden = false;
-  if (meLink) meLink.hidden = true;
   connectedOverview.classList.add("stats-loading");
   [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.add("stat-loading"));
   if (localPreview) {
