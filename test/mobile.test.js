@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import express from "express";
-import { mountMobile } from "../mobile.js";
+import { createYtdRefresh, mountMobile } from "../mobile.js";
 
 async function fixture(t) {
   const app = express();
@@ -118,4 +118,25 @@ test("app logout invalidates only the mobile session; refresh never revokes a co
   assert.equal((await f.call("/api/mobile/session", { method: "DELETE", headers })).status, 204);
   assert.equal((await f.call("/api/mobile/me", { headers })).status, 401);
   assert.deepEqual(f.tokens, f.tokenSnapshot);
+});
+
+test("YTD refresh coalesces taps, preserves loaded stats and processed records, and respects cooldown", async () => {
+  let stats = { "123": { version: 6, status: "ready", year: 2026, ytd: 756, lifetime: 2043, fastestLap: "2:38 · 42.3 km/h", checkedAt: 1 }, __processed: { "123": { "10": 99 } } };
+  let writes = 0, schedules = 0;
+  const refresh = createYtdRefresh({
+    readStats: async () => structuredClone(stats), writeStats: async (value) => { stats = structuredClone(value); writes++; },
+    personalStatsFor: async () => assert.fail("An existing summary must not be replaced"),
+    schedule: () => { schedules++; }, now: () => Date.parse("2026-10-19T14:00:00Z")
+  });
+  await Promise.all([refresh("123"), refresh("123")]);
+  assert.equal(writes, 1);
+  assert.equal(schedules, 1);
+  assert.equal(stats["123"].lifetime, 2043);
+  assert.equal(stats["123"].ytd, 756);
+  assert.equal(stats["123"].fastestLap, "2:38 · 42.3 km/h");
+  assert.equal(stats["123"].checkedAt, 1);
+  assert.deepEqual(stats.__processed, { "123": { "10": 99 } });
+  stats["123"].status = "ready";
+  await refresh("123");
+  assert.equal(writes, 1);
 });

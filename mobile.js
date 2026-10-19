@@ -7,6 +7,30 @@ const challengeFor = (value) => crypto.createHash("sha256").update(value).digest
 const random = () => crypto.randomBytes(32).toString("base64url");
 const lifetime = 30 * 24 * 60 * 60 * 1000;
 
+export function createYtdRefresh({ readStats, writeStats, personalStatsFor, schedule, now = Date.now }) {
+  let queue = Promise.resolve();
+  return (athleteId) => {
+    const result = queue.then(async () => {
+      const stats = await readStats();
+      const entry = stats[athleteId];
+      if (!entry || entry.version !== 6) return personalStatsFor(athleteId);
+      if (entry.status !== "ready" || now() - Number(entry.mobileRefreshAt || 0) < 60 * 60 * 1000) return entry;
+      const year = new Date(now()).getUTCFullYear();
+      if (entry.year !== year) entry.ytd = null;
+      Object.assign(entry, {
+        status: "queued", phase: "ytd", year,
+        ytdRanges: [{ start: new Date(Date.UTC(year, 0, 1)).toISOString(), end: new Date(now()).toISOString() }],
+        ytdSeen: [], ytdTotal: 0, mobileRefreshAt: now(), queuedAt: now()
+      });
+      await writeStats(stats);
+      schedule();
+      return entry;
+    });
+    queue = result.catch(() => {});
+    return result;
+  };
+}
+
 // App sessions have their own store. Signing out here never calls Strava's
 // deauthorize endpoint or removes anything from the existing connections store.
 export function mountMobile(app, deps) {
