@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import express from "express";
 import session from "express-session";
+import { mountMobile } from "./mobile.js";
 import { defaultDescriptionPreferences, formatReceipt, normalizeDescriptionPreferences, receiptSiteUrl } from "./public/description-format.js";
 
 const required = ["STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET", "HIGH_PARK_SEGMENT_ID"];
@@ -1557,6 +1558,45 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   // event and therefore must not change the personal totals.
   return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
+
+// Additive mobile routes use a separate session store and the same registered
+// HTTPS callback. They never change website cookies, encryption keys or grants.
+let mobileRefreshQueue = Promise.resolve();
+mountMobile(app, {
+  baseUrl, dataDir, segmentId, readEncryptedStore, writeEncryptedStore, readTokens,
+  saveToken, tokenForAthlete, hasLappedReceipt, personalStatsFor,
+  clientId: process.env.STRAVA_CLIENT_ID || "",
+  exchangeCode: async (code) => {
+    const response = await fetch("https://www.strava.com/oauth/token", {
+      method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: process.env.STRAVA_CLIENT_ID, client_secret: process.env.STRAVA_CLIENT_SECRET, code, grant_type: "authorization_code" })
+    });
+    if (!response.ok) throw new Error("Strava sign-in failed.");
+    return response.json();
+  },
+  refreshYtd: (athleteId) => {
+    const refresh = mobileRefreshQueue.then(async () => {
+      const stats = await readLapStats();
+      const entry = stats[athleteId];
+      if (!entry || entry.version !== 6) return personalStatsFor(athleteId);
+      // Coalesce repeated taps; keep all loaded counts visible during the job.
+      if (entry.status !== "ready" || Date.now() - Number(entry.mobileRefreshAt || 0) < 60 * 60 * 1000) return entry;
+      entry.status = "queued";
+      entry.phase = "ytd";
+      entry.year = new Date().getUTCFullYear();
+      entry.ytdRanges = [{ start: new Date(Date.UTC(entry.year, 0, 1)).toISOString(), end: new Date().toISOString() }];
+      entry.ytdSeen = [];
+      entry.ytdTotal = 0;
+      entry.mobileRefreshAt = Date.now();
+      entry.queuedAt = Date.now();
+      await writeEncryptedStore(lapStatsStore, stats);
+      schedulePersonalStatsStep(personalStatsStepDelay());
+      return entry;
+    });
+    mobileRefreshQueue = refresh.catch(() => {});
+    return refresh;
+  }
+});
 
 app.get("/auth/strava", (req, res) => {
   if (configError) return res.status(503).send(`Missing configuration: ${configError}`);

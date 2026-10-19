@@ -34,6 +34,14 @@ No web service can honestly promise to be unhackable. Keep the deployment platfo
 
 ## Run locally
 
+### iPhone preview support
+
+`mobile.js` adds app-specific sessions, cached personal stats, a queued yearly-refresh request, and private paginated discovery of the signed-in athlete’s receipted rides. Mobile sessions are separate from website sessions and Strava authorization. App sign-out only revokes that app session. Existing website callback behavior, connections, encryption keys and automatic descriptions remain in place.
+
+Mobile OAuth uses the already-registered HTTPS callback at `/auth/strava/complete`, validates a one-time state and a PKCE-bound code exchange, and stores only a hash of the app session in `mobile-sessions.json` on the encrypted persistent disk. The app never receives Strava access/refresh tokens or the client secret. Ride discovery is limited to 20 mobile history API reads per 15 minutes globally, with additional backoff at 70% of reported app read limits or on 429 responses. Empty history pages can occur while recent activities are scanned. Older rides are requested a page at a time. Only the exact target segment on the owner's own receipted activities is included; this is not a complete permanent archive.
+
+Tests use in-memory fixtures and no real Strava requests: `node --test test/mobile.test.js`.
+
 1. Create a Strava API application. For local development, set its authorization callback domain to `localhost`.
 2. Copy `.env.example` to `.env` and supply the values below.
 3. Run `npm install && npm run dev`.
