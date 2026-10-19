@@ -1713,9 +1713,7 @@ app.post("/api/feature-requests", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 app.get("/healthz", (_req, res) => res.status(200).json({ ok: true }));
-app.get("/kom", requireAdmin, (_req, res) => {
-  res.sendFile(path.join(process.cwd(), "public", "kom.html"));
-});
+app.get("/kom", (_req, res) => res.redirect(302, "/"));
 app.post("/api/kom/report", requireAdmin, async (req, res, next) => {
   try {
     const segments = Array.isArray(req.body?.segments) ? req.body.segments.slice(0, 12) : [];
