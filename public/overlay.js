@@ -32,24 +32,29 @@ function draw() {
     ctx.save();
     ctx.fillStyle = ink === "white" ? "#ffffff" : "#20201e";
     const withLoop = $("#show-loop").checked;
-    // Keep the artwork at one consistent scale and spacing. Taller canvases
-    // simply add transparent room above it; the composition stays at the bottom.
-    const scale = Math.min(canvas.width / 1080, canvas.height / 720);
-    ctx.translate((canvas.width - 1080 * scale) / 2, canvas.height - 720 * scale);
-    ctx.scale(scale, scale);
-    text("high park laps", 70, 92, 24);
-    text(laps.toLocaleString("en-CA"), 58, 330, laps > 999 ? 170 : 220, true);
-    text("laps", 72, 382, 30);
-    text("fastest lap", 72, 465, 24);
-    text(time, 68, 550, 80, true);
-    const speedX = 68 + ctx.measureText(time).width + 26;
-    text(`·  ${speed.toFixed(1)} km/h`, speedX, 546, 30);
-    ctx.globalAlpha = .65; ctx.fillRect(72, 602, 936, 1); ctx.globalAlpha = 1;
-    ctx.font = "700 32px Arial, sans-serif";
-    ctx.fillText("Lapped", 72, 658);
-    text("lapped.fit", 862, 658, 24);
+    // Taller canvases add transparent room above the composition. The scale
+    // control changes type/icon size while slightly opening or tightening gaps.
+    const fitScale = Math.min(canvas.width / 1080, canvas.height / 720);
+    const itemScale = Number($("#overlay-scale").value) / 100;
+    const gapScale = 1 + (1 - itemScale) * .5;
+    const x = (value) => 540 + (value - 540) * gapScale;
+    const y = (value) => 92 + (value - 92) * gapScale;
+    const size = (value) => value * itemScale;
+    ctx.translate((canvas.width - 1080 * fitScale) / 2, canvas.height - 720 * fitScale);
+    ctx.scale(fitScale, fitScale);
+    text("high park laps", x(70), y(92), size(24));
+    text(laps.toLocaleString("en-CA"), x(58), y(330), size(laps > 999 ? 170 : 220), true);
+    text("laps", x(72), y(382), size(30));
+    text("fastest lap", x(72), y(465), size(24));
+    text(time, x(68), y(550), size(80), true);
+    const speedX = x(68) + ctx.measureText(time).width + 26 * gapScale;
+    text(`·  ${speed.toFixed(1)} km/h`, speedX, y(546), size(30));
+    ctx.globalAlpha = .65; ctx.fillRect(x(72), y(602), 936 * gapScale, 1); ctx.globalAlpha = 1;
+    ctx.font = `700 ${size(32)}px Arial, sans-serif`;
+    ctx.fillText("Lapped", x(72), y(658));
+    text("lapped.fit", x(862), y(658), size(24));
     if (withLoop) {
-      ctx.save(); ctx.translate(690, 76); ctx.scale(.62, .62);
+      ctx.save(); ctx.translate(x(690), y(76)); ctx.scale(.62 * itemScale, .62 * itemScale);
       ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(route); ctx.restore();
     }
     ctx.restore();
@@ -129,14 +134,32 @@ $("#remove-photo").addEventListener("click", () => {
   photoUrl = null; photoImage = null; cropX = cropY = 50;
   status("Photo removed.");
 });
-document.querySelectorAll("[data-ratio]").forEach((button) => button.addEventListener("click", () => {
+let ratioScrollPosition = null;
+const ratioButtons = document.querySelectorAll("[data-ratio]");
+ratioButtons.forEach((button) => {
+  const rememberScroll = () => { ratioScrollPosition = { x: window.scrollX, y: window.scrollY }; };
+  button.addEventListener("pointerdown", rememberScroll, { passive: true });
+  button.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") rememberScroll();
+  });
+  button.addEventListener("click", () => {
+  const scrollPosition = ratioScrollPosition || { x: window.scrollX, y: window.scrollY };
+  ratioScrollPosition = null;
   const [width, height] = ratios[button.dataset.ratio];
   canvas.width = width; canvas.height = height;
   $("#preview").style.aspectRatio = `${width} / ${height}`;
   document.querySelectorAll("[data-ratio]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   draw();
   if (photoUrl) updateCrop();
-}));
+  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollPosition.x, scrollPosition.y)));
+  });
+});
+$("#overlay-scale").addEventListener("input", (event) => {
+  const percentage = Number(event.currentTarget.value);
+  $("#overlay-scale-value").textContent = `${percentage}%`;
+  event.currentTarget.setAttribute("aria-valuetext", `${percentage} percent`);
+  draw();
+});
 
 function rideMessage(message, showConnect = false) {
   const output = $("#ride-status");
