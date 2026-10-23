@@ -12,8 +12,8 @@ function values() {
   if (!Number.isFinite(speed) || speed <= 0 || speed > 150) throw new Error("Enter a speed between 0.1 and 150 km/h.");
   return { laps, speed, time };
 }
-function text(value, x, y, size, weight = 500) {
-  ctx.font = `${weight} ${size}px Arial, Helvetica, sans-serif`;
+function text(value, x, y, size, serif = false) {
+  ctx.font = `${serif ? "400" : "500"} ${size}px ${serif ? "Georgia, serif" : "Arial, sans-serif"}`;
   ctx.fillText(value, x, y);
 }
 function draw() {
@@ -30,16 +30,17 @@ function draw() {
     const scale = Math.min(canvas.width / 1080, canvas.height / 720);
     ctx.translate((canvas.width - 1080 * scale) / 2, canvas.height - 720 * scale);
     ctx.scale(scale, scale);
-    text("high park laps", 70, 92, 24, 600);
-    text(laps.toLocaleString("en-CA"), 58, 330, laps > 999 ? 170 : 220, 500);
-    text("laps", 72, 382, 30, 500);
-    text("fastest lap", 72, 465, 24, 600);
-    text(time, 68, 550, 80, 500);
+    text("high park laps", 70, 92, 24);
+    text(laps.toLocaleString("en-CA"), 58, 330, laps > 999 ? 170 : 220, true);
+    text("laps", 72, 382, 30);
+    text("fastest lap", 72, 465, 24);
+    text(time, 68, 550, 80, true);
     const speedX = 68 + ctx.measureText(time).width + 26;
-    text(`·  ${speed.toFixed(1)} km/h`, speedX, 546, 30, 500);
+    text(`·  ${speed.toFixed(1)} km/h`, speedX, 546, 30);
     ctx.globalAlpha = .65; ctx.fillRect(72, 602, 936, 1); ctx.globalAlpha = 1;
-    text("Lapped", 72, 658, 32, 700);
-    text("lapped.fit", 862, 658, 24, 500);
+    ctx.font = "700 32px Arial, sans-serif";
+    ctx.fillText("Lapped", 72, 658);
+    text("lapped.fit", 862, 658, 24);
     if (withLoop) {
       ctx.save(); ctx.translate(690, 76); ctx.scale(.62, .62);
       ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(route); ctx.restore();
@@ -118,7 +119,7 @@ $("#preview").addEventListener("pointerup", () => { dragStart = null; });
 $("#preview").addEventListener("pointercancel", () => { dragStart = null; });
 $("#remove-photo").addEventListener("click", () => {
   $("#photo").value = "";
-  background("dark");
+  background("checker");
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = null; photoImage = null; cropX = cropY = 50;
   status("Photo removed.");
