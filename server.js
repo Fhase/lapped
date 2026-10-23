@@ -218,6 +218,7 @@ app.use((req, res, next) => {
 // Keep the account-settings document behind the authenticated /me route even
 // though its stylesheet and script are public static assets.
 app.get("/me.html", (_req, res) => res.sendStatus(404));
+app.get("/overlay", (_req, res) => res.sendFile(path.resolve("public/overlay.html")));
 app.use(express.static("public"));
 
 const strava = async (path, options = {}) => {
