@@ -33,28 +33,30 @@ function draw() {
     ctx.fillStyle = ink === "white" ? "#ffffff" : "#20201e";
     const withLoop = $("#show-loop").checked;
     // Taller canvases add transparent room above the composition. The scale
-    // control changes type/icon size while slightly opening or tightening gaps.
+    // control changes type/icon size and horizontal spacing without stretching
+    // the vertical rhythm between lines.
     const fitScale = Math.min(canvas.width / 1080, canvas.height / 720);
     const itemScale = Number($("#overlay-scale").value) / 100;
-    const gapScale = 1 + (1 - itemScale) * .5;
-    const x = (value) => 540 + (value - 540) * gapScale;
-    const y = (value) => 92 + (value - 92) * gapScale;
+    const horizontalGapScale = 1 + (1 - itemScale) * .5;
+    const x = (value) => 540 + (value - 540) * horizontalGapScale;
+    const y = (value) => value;
     const size = (value) => value * itemScale;
     ctx.translate((canvas.width - 1080 * fitScale) / 2, canvas.height - 720 * fitScale);
     ctx.scale(fitScale, fitScale);
-    text("high park laps", x(70), y(92), size(24));
-    text(laps.toLocaleString("en-CA"), x(58), y(330), size(laps > 999 ? 170 : 220), true);
-    text("laps", x(72), y(382), size(30));
+    text("high park laps", x(72), y(92), size(24));
+    text(laps.toLocaleString("en-CA"), x(72), y(330), size(laps > 999 ? 170 : 220), true);
+    text("laps", x(72), y(408), size(30));
     text("fastest lap", x(72), y(465), size(24));
-    text(time, x(68), y(550), size(80), true);
-    const speedX = x(68) + ctx.measureText(time).width + 26 * gapScale;
+    text(time, x(72), y(550), size(80), true);
+    const speedX = x(72) + ctx.measureText(time).width + 26 * horizontalGapScale;
     text(`·  ${speed.toFixed(1)} km/h`, speedX, y(546), size(30));
-    ctx.globalAlpha = .65; ctx.fillRect(x(72), y(602), 936 * gapScale, 1); ctx.globalAlpha = 1;
+    ctx.globalAlpha = .65; ctx.fillRect(x(72), y(602), 936 * horizontalGapScale, 1); ctx.globalAlpha = 1;
     ctx.font = `700 ${size(32)}px Arial, sans-serif`;
     ctx.fillText("Lapped", x(72), y(658));
     text("lapped.fit", x(862), y(658), size(24));
     if (withLoop) {
-      ctx.save(); ctx.translate(x(690), y(76)); ctx.scale(.62 * itemScale, .62 * itemScale);
+      const loopScale = .62 * itemScale;
+      ctx.save(); ctx.translate(x(1008) - 342 * loopScale, y(550) - 718 * loopScale); ctx.scale(loopScale, loopScale);
       ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(route); ctx.restore();
     }
     ctx.restore();
