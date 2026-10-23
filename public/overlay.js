@@ -31,10 +31,10 @@ function draw() {
     ctx.translate((canvas.width - 1080 * scale) / 2, canvas.height - 720 * scale);
     ctx.scale(scale, scale);
     text("high park laps", 70, 92, 24, 600);
-    text(laps.toLocaleString("en-CA"), 58, 330, laps > 999 ? 170 : 220, 700);
+    text(laps.toLocaleString("en-CA"), 58, 330, laps > 999 ? 170 : 220, 500);
     text("laps", 72, 382, 30, 500);
     text("fastest lap", 72, 465, 24, 600);
-    text(time, 68, 550, 80, 700);
+    text(time, 68, 550, 80, 500);
     const speedX = 68 + ctx.measureText(time).width + 26;
     text(`·  ${speed.toFixed(1)} km/h`, speedX, 546, 30, 500);
     ctx.globalAlpha = .65; ctx.fillRect(72, 602, 936, 1); ctx.globalAlpha = 1;
