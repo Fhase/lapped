@@ -137,13 +137,15 @@ $("#remove-photo").addEventListener("click", () => {
 let ratioScrollPosition = null;
 const ratioButtons = document.querySelectorAll("[data-ratio]");
 ratioButtons.forEach((button) => {
-  const rememberScroll = () => { ratioScrollPosition = { x: window.scrollX, y: window.scrollY }; };
+  const rememberScroll = () => {
+    ratioScrollPosition = { button, top: button.getBoundingClientRect().top, left: window.scrollX };
+  };
   button.addEventListener("pointerdown", rememberScroll, { passive: true });
   button.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") rememberScroll();
   });
   button.addEventListener("click", () => {
-  const scrollPosition = ratioScrollPosition || { x: window.scrollX, y: window.scrollY };
+  const scrollPosition = ratioScrollPosition || { button, top: button.getBoundingClientRect().top, left: window.scrollX };
   ratioScrollPosition = null;
   const [width, height] = ratios[button.dataset.ratio];
   canvas.width = width; canvas.height = height;
@@ -151,7 +153,10 @@ ratioButtons.forEach((button) => {
   document.querySelectorAll("[data-ratio]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   draw();
   if (photoUrl) updateCrop();
-  requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(scrollPosition.x, scrollPosition.y)));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const newTop = scrollPosition.button.getBoundingClientRect().top;
+    window.scrollTo(scrollPosition.left, window.scrollY + newTop - scrollPosition.top);
+  }));
   });
 });
 $("#overlay-scale").addEventListener("input", (event) => {

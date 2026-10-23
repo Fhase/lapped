@@ -1,0 +1,45 @@
+/* Mobile layout; ?mobile-preview=1 also enables it on wider screens for review. */
+html.mobile-layout body{min-width:320px}
+html.mobile-layout main{width:100%;max-width:430px;min-height:100vh;padding:23px 20px 38px;border-inline:1px solid color-mix(in srgb,var(--ink) 8%,transparent)}
+html.mobile-layout nav{font-size:11px}
+html.mobile-layout .wordmark{font-size:21px}
+html.mobile-layout .nav-right{gap:8px}
+html.mobile-layout .intro{display:flex;flex-direction:column;align-items:stretch;gap:31px;padding:65px 0 48px}
+html.mobile-layout .copy{width:100%}
+html.mobile-layout h1{font-size:clamp(48px,13.5vw,58px);line-height:.94;letter-spacing:-.08em;margin-bottom:22px}
+html.mobile-layout .lede{font-size:16px;line-height:1.42;letter-spacing:-.02em;margin-bottom:24px}
+html.mobile-layout .text-link{font-size:13px}
+html.mobile-layout .route-card{height:clamp(350px,100vw,410px);padding:16px 17px 13px;border-radius:2px}
+html.mobile-layout .route-meta{font-size:11px}
+html.mobile-layout .place{gap:6px}
+html.mobile-layout .place svg{width:13px;height:13px}
+html.mobile-layout .route-card svg{height:clamp(280px,78vw,326px);width:auto;max-width:100%;flex:0 1 auto;margin:auto;overflow:visible}
+html.mobile-layout .route{stroke-width:7.5;animation-duration:1.35s}
+html.mobile-layout .riders{animation-delay:1.55s}
+html.mobile-layout .connect-card{display:block;padding:24px 0 25px}
+html.mobile-layout .connect-card h2{font-size:28px;margin-bottom:11px}
+html.mobile-layout .connect-card p:not(.status){font-size:14px;line-height:1.45}
+html.mobile-layout .actions{align-items:stretch;gap:13px;margin-top:21px}
+html.mobile-layout .actions form{align-items:stretch;width:100%;gap:12px}
+html.mobile-layout .button{width:100%;min-width:0;min-height:52px}
+html.mobile-layout .consent-box{width:100%;max-width:100%;font-size:12px;line-height:1.45}
+html.mobile-layout .connected-overview{display:grid;grid-template-columns:1fr;gap:15px}
+html.mobile-layout .connected-overview h2{width:auto;font-size:22px}
+html.mobile-layout .lap-stats-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0;padding:15px 0 0;border:0;border-top:1px solid color-mix(in srgb,var(--ink) 22%,transparent)}
+html.mobile-layout .lap-stats-values p{gap:6px;min-width:0}
+html.mobile-layout .lap-stats-values strong,html.mobile-layout .lap-stats-values>p strong,html.mobile-layout .fastest-stat .fastest-inline strong{font-size:clamp(22px,7.5vw,30px);letter-spacing:-.06em}
+html.mobile-layout .fastest-stat .fastest-inline{gap:4px;flex-wrap:wrap}
+html.mobile-layout .fastest-stat .fastest-inline b{font-size:15px}
+html.mobile-layout .lap-stats-values span{font-size:10px;line-height:1.3}
+html.mobile-layout .lap-stats-values>p .substat{font-size:10px}
+html.mobile-layout .lap-stats-status{font-size:11px;line-height:1.45!important}
+html.mobile-layout .actions .connected-status{width:auto;text-align:left}
+html.mobile-layout .notes{padding-top:22px}
+html.mobile-layout .example-block{gap:12px}
+html.mobile-layout .notes .example-label{font-size:16px}
+html.mobile-layout .description-example{font-size:14px;line-height:1.6;padding:15px 16px}
+html.mobile-layout .request-card{grid-template-columns:1fr;gap:18px;margin-top:46px;padding-top:21px}
+html.mobile-layout .request-card h2{font-size:26px}
+html.mobile-layout .site-footer{margin-top:53px}
+@media(max-width:420px){html.mobile-layout main{padding:20px 17px 32px}html.mobile-layout .intro{padding-top:56px;gap:27px}html.mobile-layout .route-card{height:calc(100vw - 28px);min-height:320px;max-height:385px}html.mobile-layout .route-card svg{height:min(82vw,310px)}}
+@media(prefers-reduced-motion:reduce){html.mobile-layout .route{animation:none;stroke-dashoffset:0}html.mobile-layout .riders{animation:none;opacity:1}}
