@@ -6,7 +6,7 @@ const ratios = { square: [1080, 1080], story: [1080, 1920], portrait: [1080, 135
 const status = (text) => { $("#status").textContent = text; };
 
 function values() {
-  const lapInput = $("#laps").value.trim(), speedInput = $("#speed").value.trim(), time = $("#time").value.trim();
+  const lapInput = $("#laps").textContent.trim(), speedInput = $("#speed").textContent.trim(), time = $("#time").textContent.trim();
   if (!lapInput || !speedInput || !time) return null;
   const laps = Number(lapInput), speed = Number(speedInput);
   if (!Number.isInteger(laps) || laps < 1 || laps > 9999) throw new Error("Enter a lap count between 1 and 9,999.");
@@ -164,14 +164,14 @@ async function requestRide(path, options) {
 function showRide(ride) {
   if (!ride?.laps) {
     loadedRide = false;
-    $("#laps").value = ""; $("#time").value = ""; $("#speed").value = "";
+    $("#laps").textContent = ""; $("#time").textContent = ""; $("#speed").textContent = "";
     draw();
     rideMessage("No completed High Park laps on this ride, so there’s nothing to add.");
     return;
   }
-  $("#laps").value = String(ride.laps);
-  $("#time").value = ride.fastestLap?.time || "";
-  $("#speed").value = ride.fastestLap?.speedKmh || "";
+  $("#laps").textContent = String(ride.laps);
+  $("#time").textContent = ride.fastestLap?.time || "";
+  $("#speed").textContent = ride.fastestLap?.speedKmh || "";
   loadedRide = true;
   draw();
   const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";

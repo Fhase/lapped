@@ -21,7 +21,7 @@
       <p class="preview-note">Your photo stays in this browser. Only the text and loop are exported.</p>
     </section>
     <section class="editor" aria-label="Customize your ride overlay">
-      <div class="fields" aria-label="Ride stats, filled from the selected Strava ride"><div><label for="laps">laps</label><input id="laps" type="number" min="1" max="9999" step="1" placeholder="—" readonly aria-readonly="true"></div><div><label for="time">fastest lap</label><input id="time" inputmode="text" placeholder="—" readonly aria-readonly="true"></div><div><label for="speed">speed · km/h</label><input id="speed" type="number" min="0.1" max="150" step="0.1" placeholder="—" readonly aria-readonly="true"></div></div>
+      <div class="fields" aria-label="Ride stats from the selected Strava ride"><div><span class="field-label">laps</span><output class="stat-value" id="laps" aria-label="laps"></output></div><div><span class="field-label">fastest lap</span><output class="stat-value" id="time" aria-label="fastest lap"></output></div><div><span class="field-label">speed · km/h</span><output class="stat-value" id="speed" aria-label="speed in kilometres per hour"></output></div></div>
       <label class="switch"><input type="checkbox" id="show-loop" checked><span>include the high park loop</span></label>
       <div class="exports"><button class="primary" id="copy" type="button">Copy overlay</button><button id="save" type="button">Save PNG</button><button id="share" type="button" hidden>Share image</button></div>
       <p id="status" role="status" aria-live="polite"></p>
