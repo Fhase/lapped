@@ -1,12 +1,14 @@
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#overlay"), ctx = canvas.getContext("2d");
 const route = new Path2D("M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z");
-let ink = "white", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart;
-const ratios = { story: [1080, 1920], portrait: [1080, 1350], square: [1080, 1080], landscape: [1920, 1080] };
+let ink = "white", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart, loadedRide = false;
+const ratios = { square: [1080, 1080], story: [1080, 1920], portrait: [1080, 1350], landscape: [1920, 1080] };
 const status = (text) => { $("#status").textContent = text; };
 
 function values() {
-  const laps = Number($("#laps").value), speed = Number($("#speed").value), time = $("#time").value.trim();
+  const lapInput = $("#laps").value.trim(), speedInput = $("#speed").value.trim(), time = $("#time").value.trim();
+  if (!lapInput || !speedInput || !time) return null;
+  const laps = Number(lapInput), speed = Number(speedInput);
   if (!Number.isInteger(laps) || laps < 1 || laps > 9999) throw new Error("Enter a lap count between 1 and 9,999.");
   if (!/^\d{1,3}:[0-5]\d$/.test(time) || time.split(":").every((part) => Number(part) === 0)) throw new Error("Use minutes:seconds for your fastest lap, like 2:38.");
   if (!Number.isFinite(speed) || speed <= 0 || speed > 150) throw new Error("Enter a speed between 0.1 and 150 km/h.");
@@ -19,9 +21,14 @@ function text(value, x, y, size, serif = false) {
 function draw() {
   currentBlob = null;
   try {
-    const { laps, speed, time } = values();
     // The canvas is always transparent. Photo/checker backgrounds belong to CSS only.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const stats = values();
+    if (!loadedRide || !stats) {
+      $("#copy").disabled = $("#save").disabled = $("#share").disabled = true;
+      return;
+    }
+    const { laps, speed, time } = stats;
     ctx.save();
     ctx.fillStyle = ink === "white" ? "#ffffff" : "#20201e";
     const withLoop = $("#show-loop").checked;
@@ -52,7 +59,7 @@ function draw() {
   } catch (error) { status(error.message); }
   $("#copy").disabled = $("#save").disabled = $("#share").disabled = !currentBlob;
 }
-function edited() { $("#sample").hidden = true; draw(); }
+function edited() { draw(); }
 for (const field of ["#laps", "#time", "#speed"]) $(field).addEventListener("input", edited);
 $("#show-loop").addEventListener("change", draw);
 document.querySelectorAll("[data-ink]").forEach((button) => button.addEventListener("click", () => {
@@ -132,6 +139,81 @@ document.querySelectorAll("[data-ratio]").forEach((button) => button.addEventLis
   draw();
   if (photoUrl) updateCrop();
 }));
+
+function rideMessage(message, showConnect = false) {
+  const output = $("#ride-status");
+  output.replaceChildren(document.createTextNode(message));
+  if (showConnect) {
+    output.append(" ");
+    const link = document.createElement("a");
+    link.href = "/#connect-card";
+    link.textContent = "connect strava";
+    output.append(link, " to choose a ride.");
+  }
+}
+async function requestRide(path, options) {
+  const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(body.error || (response.status === 404
+      ? "This local preview has no Lapped API server attached yet. Ride lookup will work on lapped.fit after rollout."
+      : "Could not load that ride."));
+    error.status = response.status;
+    throw error;
+  }
+  return body;
+}
+function showRide(ride) {
+  if (!ride?.laps) {
+    loadedRide = false;
+    $("#laps").value = ""; $("#time").value = ""; $("#speed").value = "";
+    draw();
+    rideMessage("No completed High Park laps on this ride, so there’s nothing to add.");
+    return;
+  }
+  $("#laps").value = String(ride.laps);
+  $("#time").value = ride.fastestLap?.time || "";
+  $("#speed").value = ride.fastestLap?.speedKmh || "";
+  loadedRide = true;
+  draw();
+  const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";
+  rideMessage(`${ride.title || "ride"}${date} · ${ride.laps} High Park lap${ride.laps === 1 ? "" : "s"}`);
+}
+async function loadRide(id) {
+  if (!/^\d+$/.test(String(id))) return;
+  rideMessage("loading ride…");
+  $("#recent-ride").disabled = true;
+  try { showRide(await requestRide(`/api/overlay/rides/${encodeURIComponent(id)}`)); }
+  catch (error) {
+    rideMessage(error.status === 401 ? "Connect Strava to choose one of your rides." : error.message, error.status === 401);
+  } finally { $("#recent-ride").disabled = false; }
+}
+async function loadRecentRides() {
+  const select = $("#recent-ride");
+  try {
+    const { rides = [] } = await requestRide("/api/overlay/rides");
+    select.replaceChildren(new Option(rides.length ? "choose a ride…" : "no recent rides found", ""));
+    for (const ride of rides) {
+      const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";
+      select.add(new Option(`${ride.title || "ride"}${date}`, ride.id));
+    }
+    if (!rides.length) rideMessage("No recent rides found on this Strava account.");
+    else rideMessage("Choose a recent ride or paste a link to make your overlay.");
+  } catch (error) {
+    select.replaceChildren(new Option(error.status === 401 ? "connect strava to load rides" : "recent rides unavailable", ""));
+    rideMessage(error.status === 401 ? "Connect Strava to choose one of your rides." : error.message, error.status === 401);
+  }
+}
+$("#recent-ride").addEventListener("change", (event) => loadRide(event.target.value));
+$("#ride-link-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const url = $("#ride-link").value.trim();
+  if (!url) return rideMessage("Paste a Strava ride link first.");
+  const button = $("#load-link"); button.disabled = true; button.textContent = "loading…";
+  try { showRide(await requestRide("/api/overlay/rides/lookup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) })); }
+  catch (error) { rideMessage(error.status === 401 ? "Connect Strava to load one of your rides." : error.message, error.status === 401); }
+  finally { button.disabled = false; button.textContent = "load ride"; }
+});
 function download(blob) {
   const url = URL.createObjectURL(blob), a = document.createElement("a");
   a.href = url; a.download = "lapped-ride-overlay.png"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -153,3 +235,4 @@ $("#share").addEventListener("click", async () => {
   catch (error) { if (error.name !== "AbortError") status("Sharing isn’t available here. Use Save PNG instead."); }
 });
 draw();
+loadRecentRides();

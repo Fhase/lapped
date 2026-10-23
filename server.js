@@ -49,6 +49,11 @@ const oauthRequestsByIp = new Map();
 const featureRequestWindowMs = 60 * 60 * 1000;
 const featureRequestSubmissions = new Map();
 const waitlistSubmissions = new Map();
+// Overlay ride lookups are deliberately read-only and transient. Keep only
+// compact summaries in memory, never full Strava activities or descriptions.
+const overlayRideListCache = new Map();
+const overlayRideDetailCache = new Map();
+const overlayReadWindows = new Map();
 // Strava can announce a freshly uploaded activity before its segment efforts
 // have finished processing. Keep one short, in-memory retry per activity so an
 // import is not missed, without doubling scans for title edits or every webhook.
@@ -1336,6 +1341,85 @@ function formatFastestLap(efforts) {
   return `${minutes}:${remainder} · ${speedKmh} km/h`;
 }
 
+const overlayListCacheMs = 5 * 60 * 1000;
+const overlayDetailCacheMs = 10 * 60 * 1000;
+const overlayReadWindowMs = 15 * 60 * 1000;
+const overlayReadLimit = 12;
+
+function takeOverlayRead(athleteId) {
+  const now = Date.now();
+  const recent = (overlayReadWindows.get(athleteId) || []).filter((time) => now - time < overlayReadWindowMs);
+  if (recent.length >= overlayReadLimit) return false;
+  recent.push(now);
+  overlayReadWindows.set(athleteId, recent);
+  return true;
+}
+
+function overlayFastestLap(efforts) {
+  const fastest = efforts
+    .filter((effort) => Number(effort.elapsed_time) > 0)
+    .sort((a, b) => Number(a.elapsed_time) - Number(b.elapsed_time))[0];
+  if (!fastest) return null;
+  const elapsed = Math.round(Number(fastest.elapsed_time));
+  const speedMs = Number(fastest.average_speed) || Number(fastest.distance) / elapsed;
+  return {
+    time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`,
+    speedKmh: Number.isFinite(speedMs) ? (speedMs * 3.6).toFixed(1) : null
+  };
+}
+
+function overlayRideError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+async function getOverlayRecentRides(athleteId, token) {
+  const cached = overlayRideListCache.get(athleteId);
+  if (cached && Date.now() - cached.checkedAt < overlayListCacheMs) return cached.rides;
+  if (!takeOverlayRead(athleteId)) throw overlayRideError(429, "Overlay ride lookup is taking a short break to protect Strava request limits. Try again later.");
+  const activities = await strava("/athlete/activities?per_page=50", stravaHeaders(token));
+  const rides = activities
+    .filter((activity) => /Ride$/i.test(String(activity.sport_type || activity.type || "")))
+    .slice(0, 12)
+    .map((activity) => ({
+      id: String(activity.id),
+      title: String(activity.name || "ride").slice(0, 120),
+      date: activity.start_date_local || activity.start_date || null
+    }));
+  overlayRideListCache.set(athleteId, { rides, checkedAt: Date.now() });
+  return rides;
+}
+
+async function getOverlayRide(athleteId, activityId, token) {
+  if (!/^\d{1,20}$/.test(String(activityId))) throw overlayRideError(400, "Paste a valid Strava activity link.");
+  const key = `${athleteId}:${activityId}`;
+  const cached = overlayRideDetailCache.get(key);
+  if (cached && Date.now() - cached.checkedAt < overlayDetailCacheMs) return cached.ride;
+  if (!takeOverlayRead(athleteId)) throw overlayRideError(429, "Overlay ride lookup is taking a short break to protect Strava request limits. Try again later.");
+  let activity;
+  try {
+    activity = await strava(`/activities/${encodeURIComponent(activityId)}?include_all_efforts=true`, stravaHeaders(token));
+  } catch (error) {
+    if (error.status === 429) throw error;
+    if (error.status === 401) throw overlayRideError(401, "Strava needs you to reconnect. Your saved connection has not been removed.");
+    throw overlayRideError(404, "Could not access that ride with your connected Strava account.");
+  }
+  if (String(activity.athlete?.id || "") !== String(athleteId)) {
+    throw overlayRideError(404, "That ride isn’t available from your connected Strava account.");
+  }
+  const efforts = (activity.segment_efforts || []).filter(isTargetEffort);
+  const ride = {
+    id: String(activity.id),
+    title: String(activity.name || "ride").slice(0, 120),
+    date: activity.start_date_local || activity.start_date || null,
+    laps: efforts.length,
+    fastestLap: overlayFastestLap(efforts)
+  };
+  overlayRideDetailCache.set(key, { ride, checkedAt: Date.now() });
+  return ride;
+}
+
 function hasLappedReceipt(description) {
   const receiptNumber = "[0-9𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿]+";
   const receiptLine = `(?:laps|ʟᴀᴘꜱ|𝚕𝚊𝚙𝚜)(?::\\s*|\\s·\\s*)${receiptNumber}`;
@@ -1647,6 +1731,38 @@ app.put("/api/description-preferences", requireConnectedAthlete, async (req, res
     const preferences = await saveDescriptionPreferences(req.connectedAthleteId, req.body?.preferences || {});
     res.json({ ok: true, preferences });
   } catch (error) { next(error); }
+});
+app.get("/api/overlay/rides", requireConnectedAthlete, async (req, res, next) => {
+  try {
+    const token = await accessToken(req);
+    const rides = await getOverlayRecentRides(req.connectedAthleteId, token);
+    res.set("Cache-Control", "private, no-store").json({ rides });
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting ride lookups. Try again in a few minutes." });
+    next(error);
+  }
+});
+app.get("/api/overlay/rides/:activityId", requireConnectedAthlete, async (req, res, next) => {
+  try {
+    const token = await accessToken(req);
+    const ride = await getOverlayRide(req.connectedAthleteId, req.params.activityId, token);
+    res.set("Cache-Control", "private, no-store").json(ride);
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting ride lookups. Try again in a few minutes." });
+    next(error);
+  }
+});
+app.post("/api/overlay/rides/lookup", requireConnectedAthlete, async (req, res, next) => {
+  try {
+    const activityId = await parseStravaActivityUrl(req.body?.url);
+    if (!activityId) return res.status(400).json({ error: "Paste a standard Strava activity link or Strava app link." });
+    const token = await accessToken(req);
+    const ride = await getOverlayRide(req.connectedAthleteId, activityId, token);
+    res.set("Cache-Control", "private, no-store").json(ride);
+  } catch (error) {
+    if (isRateLimitError(error)) return res.status(429).json({ error: "Strava is temporarily rate-limiting ride lookups. Try again in a few minutes." });
+    next(error);
+  }
 });
 app.get("/api/lap-stats", async (req, res, next) => {
   try {
