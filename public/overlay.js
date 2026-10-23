@@ -59,8 +59,6 @@ function draw() {
   } catch (error) { status(error.message); }
   $("#copy").disabled = $("#save").disabled = $("#share").disabled = !currentBlob;
 }
-function edited() { draw(); }
-for (const field of ["#laps", "#time", "#speed"]) $(field).addEventListener("input", edited);
 $("#show-loop").addEventListener("change", draw);
 document.querySelectorAll("[data-ink]").forEach((button) => button.addEventListener("click", () => {
   ink = button.dataset.ink;

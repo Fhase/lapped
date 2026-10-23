@@ -5,23 +5,23 @@
 <main>
   <nav><a class="brand" href="/">Lapped</a><span>ride overlay</span></nav>
   <header><h1>after the ride.</h1><p>A little proof of your laps.</p></header>
+  <div class="ride-source">
+    <label for="recent-ride">choose a recent ride</label>
+    <select id="recent-ride"><option value="">loading your rides…</option></select>
+    <form id="ride-link-form"><label for="ride-link">or paste a strava ride link</label><div class="ride-link-row"><input id="ride-link" type="text" inputmode="url" placeholder="strava.com/activities/…" autocomplete="url"><button type="submit" id="load-link">load ride</button></div></form>
+    <p id="ride-status" role="status" aria-live="polite">Choose a recent ride or paste a link to make your overlay.</p>
+  </div>
   <div class="workspace">
     <section class="preview-column" aria-label="Overlay preview">
       <div class="preview" id="preview" data-background="checker"><canvas id="overlay" width="1080" height="1080" aria-label="Transparent ride overlay preview"></canvas><span class="preview-tag">transparent preview</span></div>
       <div class="preview-tools"><label class="photo-button">add photo<input type="file" id="photo" accept="image/*"></label><button id="remove-photo" type="button" hidden>remove photo</button></div>
       <div class="photo-adjust" id="photo-adjust" hidden><label for="photo-zoom">photo zoom</label><input id="photo-zoom" type="range" min="1" max="2.5" step="0.01" value="1"><button id="reset-crop" type="button">reset crop</button><span>drag the photo to adjust</span></div>
       <fieldset><legend>text colour</legend><div class="segmented"><button type="button" data-ink="white" aria-pressed="true">white</button><button type="button" data-ink="dark" aria-pressed="false">dark</button></div></fieldset>
-      <div class="ratio-tools" aria-label="Image ratio"><span>image ratio</span><div class="segmented"><button type="button" data-ratio="square" aria-pressed="true">square</button><button type="button" data-ratio="story" aria-pressed="false">story 9:16</button><button type="button" data-ratio="portrait" aria-pressed="false">portrait 4:5</button><button type="button" data-ratio="landscape" aria-pressed="false">landscape</button></div></div>
+      <div class="ratio-tools" aria-label="Image ratio"><span>image ratio</span><div class="segmented"><button type="button" data-ratio="square" aria-pressed="true">square</button><button type="button" data-ratio="story" aria-pressed="false">story 9:16</button><button type="button" data-ratio="portrait" aria-pressed="false">portrait 4:5</button><button type="button" data-ratio="landscape" aria-pressed="false">landscape 16:9</button></div></div>
       <p class="preview-note">Your photo stays in this browser. Only the text and loop are exported.</p>
     </section>
     <section class="editor" aria-label="Customize your ride overlay">
-      <div class="ride-source">
-        <label for="recent-ride">choose a recent ride</label>
-        <select id="recent-ride"><option value="">loading your rides…</option></select>
-        <form id="ride-link-form"><label for="ride-link">or paste a strava ride link</label><div class="ride-link-row"><input id="ride-link" type="text" inputmode="url" placeholder="strava.com/activities/…" autocomplete="url"><button type="submit" id="load-link">load ride</button></div></form>
-        <p id="ride-status" role="status" aria-live="polite">Choose a recent ride or paste a link to make your overlay.</p>
-      </div>
-      <div class="fields"><div><label for="laps">laps</label><input id="laps" type="number" min="1" max="9999" step="1" placeholder="—"></div><div><label for="time">fastest lap</label><input id="time" inputmode="text" placeholder="—"></div><div><label for="speed">speed · km/h</label><input id="speed" type="number" min="0.1" max="150" step="0.1" placeholder="—"></div></div>
+      <div class="fields" aria-label="Ride stats, filled from the selected Strava ride"><div><label for="laps">laps</label><input id="laps" type="number" min="1" max="9999" step="1" placeholder="—" readonly aria-readonly="true"></div><div><label for="time">fastest lap</label><input id="time" inputmode="text" placeholder="—" readonly aria-readonly="true"></div><div><label for="speed">speed · km/h</label><input id="speed" type="number" min="0.1" max="150" step="0.1" placeholder="—" readonly aria-readonly="true"></div></div>
       <label class="switch"><input type="checkbox" id="show-loop" checked><span>include the high park loop</span></label>
       <div class="exports"><button class="primary" id="copy" type="button">Copy overlay</button><button id="save" type="button">Save PNG</button><button id="share" type="button" hidden>Share image</button></div>
       <p id="status" role="status" aria-live="polite"></p>
