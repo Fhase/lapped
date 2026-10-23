@@ -1,11 +1,5 @@
 import "./description-format.js";
 
-const mobilePreview = new URLSearchParams(location.search).get("mobile-preview") === "1";
-const mobileBreakpoint = window.matchMedia("(max-width: 600px)");
-const syncMobileLayout = () => document.documentElement.classList.toggle("mobile-layout", mobilePreview || mobileBreakpoint.matches);
-syncMobileLayout();
-mobileBreakpoint.addEventListener("change", syncMobileLayout);
-
 const connect = document.querySelector("#connect"), disconnect = document.querySelector("#disconnect");
 const onboarding = document.querySelector("#onboarding"), connectedOverview = document.querySelector("#connected-overview"), descriptionExample = document.querySelector("#description-example"), athleteName = document.querySelector("#athlete-name");
 const connectedStatus = document.querySelector(".connected-status");
@@ -96,17 +90,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     fastestSpeed.textContent = stats.fastestLap ? (String(stats.fastestLap).split(" · ")[1] || "—") : "—";
     lapStatsStatus.textContent = "Updated from your private Strava segment history.";
   }).catch(() => { [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading")); connectedOverview.classList.remove("stats-loading"); lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
-}).catch(() => {
-  if (mobilePreview) {
-    connect.textContent = "connect · staging preview";
-    connect.disabled = true;
-    consentBox.hidden = true;
-    connectForm?.addEventListener("submit", (event) => event.preventDefault());
-    return;
-  }
-  connect.textContent = "Server unavailable";
-  connect.removeAttribute("href");
-});
+}).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
 disconnect.onclick = async () => {
   disconnect.disabled = true;
   try { await fetch("/auth/disconnect", { method: "POST" }); } finally { location.reload(); }
