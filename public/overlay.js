@@ -135,6 +135,7 @@ $("#remove-photo").addEventListener("click", () => {
   status("Photo removed.");
 });
 let ratioScrollPosition = null;
+let ratioRestoreToken = 0;
 const ratioButtons = document.querySelectorAll("[data-ratio]");
 ratioButtons.forEach((button) => {
   const rememberScroll = () => {
@@ -145,18 +146,24 @@ ratioButtons.forEach((button) => {
     if (event.key === "Enter" || event.key === " ") rememberScroll();
   });
   button.addEventListener("click", () => {
-  const scrollPosition = ratioScrollPosition || { button, top: button.getBoundingClientRect().top, left: window.scrollX };
-  ratioScrollPosition = null;
-  const [width, height] = ratios[button.dataset.ratio];
-  canvas.width = width; canvas.height = height;
-  $("#preview").style.aspectRatio = `${width} / ${height}`;
-  document.querySelectorAll("[data-ratio]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-  draw();
-  if (photoUrl) updateCrop();
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    const newTop = scrollPosition.button.getBoundingClientRect().top;
-    window.scrollTo(scrollPosition.left, window.scrollY + newTop - scrollPosition.top);
-  }));
+    const scrollPosition = ratioScrollPosition || { button, top: button.getBoundingClientRect().top, left: window.scrollX };
+    ratioScrollPosition = null;
+    const restoreToken = ++ratioRestoreToken;
+    const [width, height] = ratios[button.dataset.ratio];
+    canvas.width = width; canvas.height = height;
+    $("#preview").style.aspectRatio = `${width} / ${height}`;
+    document.querySelectorAll("[data-ratio]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+    draw();
+    if (photoUrl) updateCrop();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (restoreToken !== ratioRestoreToken) return;
+      const newTop = scrollPosition.button.getBoundingClientRect().top;
+      const root = document.documentElement;
+      const previousScrollBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = "auto";
+      window.scrollTo(scrollPosition.left, window.scrollY + newTop - scrollPosition.top);
+      root.style.scrollBehavior = previousScrollBehavior;
+    }));
   });
 });
 $("#overlay-scale").addEventListener("input", (event) => {
