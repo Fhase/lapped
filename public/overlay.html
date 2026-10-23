@@ -1,28 +1,26 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>lapped — ride overlay</title><link rel="stylesheet" href="/overlay.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>lapped — ride overlay</title><link rel="stylesheet" href="/overlay.css"><style>header h1{font-family:Arial,Helvetica,sans-serif;font-weight:600;letter-spacing:-.07em;text-transform:lowercase}@media(max-width:420px){header h1{font-size:clamp(34px,11.5vw,44px);white-space:nowrap}}</style></head>
 <body>
 <main>
   <nav><a class="brand" href="/">Lapped</a><span>ride overlay</span></nav>
-  <header><p class="eyebrow">after the ride</p><h1>Your ride.<br>Your photo.</h1><p>A little proof of your laps. Made to go over your photo.</p></header>
+  <header><h1>after the ride.</h1><p>A little proof of your laps.</p></header>
   <div class="workspace">
     <section class="preview-column" aria-label="Overlay preview">
-      <div class="preview" id="preview" data-background="dark"><canvas id="overlay" width="1080" height="720" aria-label="Transparent ride overlay preview"></canvas><span class="preview-tag">preview background · not included</span></div>
-      <div class="preview-tools"><div class="backgrounds" aria-label="Preview background"><button type="button" data-bg="dark" aria-pressed="true">dark</button><button type="button" data-bg="light" aria-pressed="false">light</button><button type="button" data-bg="checker" aria-pressed="false">transparent</button></div><label class="photo-button">try your photo<input type="file" id="photo" accept="image/*"></label><button id="remove-photo" type="button" hidden>remove photo</button></div>
+      <div class="preview" id="preview" data-background="dark"><canvas id="overlay" width="1080" height="1920" aria-label="Transparent ride overlay preview"></canvas><span class="preview-tag">preview background · not included</span></div>
+      <div class="preview-tools"><div class="backgrounds" aria-label="Preview background"><button type="button" data-bg="dark" aria-pressed="true">dark</button><button type="button" data-bg="light" aria-pressed="false">light</button><button type="button" data-bg="checker" aria-pressed="false">transparent</button></div><label class="photo-button">add photo<input type="file" id="photo" accept="image/*"></label><button id="remove-photo" type="button" hidden>remove photo</button></div>
+      <div class="photo-adjust" id="photo-adjust" hidden><label for="photo-zoom">photo zoom</label><input id="photo-zoom" type="range" min="1" max="2.5" step="0.01" value="1"><button id="reset-crop" type="button">reset crop</button><span>drag the photo to adjust</span></div>
+      <div class="ratio-tools" aria-label="Image ratio"><span>image ratio</span><div class="segmented"><button type="button" data-ratio="story" aria-pressed="true">story 9:16</button><button type="button" data-ratio="portrait" aria-pressed="false">portrait 4:5</button><button type="button" data-ratio="square" aria-pressed="false">square</button><button type="button" data-ratio="landscape" aria-pressed="false">landscape</button></div></div>
       <p class="preview-note">Your photo stays in this browser. Only the text and loop are exported.</p>
     </section>
     <section class="editor" aria-label="Customize your ride overlay">
-      <div class="step"><span>01</span><h2>Add your ride</h2></div>
-      <p class="help">Paste your Lapped description, or enter the two stats below.</p>
-      <label for="receipt">ride description</label><textarea id="receipt" rows="3" placeholder="laps · 14&#10;fastest lap · 2:38 · 42.3 km/h&#10;www.lapped.fit"></textarea>
       <div class="fields"><div><label for="laps">laps</label><input id="laps" type="number" min="1" max="9999" step="1" value="14" required></div><div><label for="time">fastest lap</label><input id="time" value="2:38" inputmode="text" placeholder="2:38" required></div><div><label for="speed">speed · km/h</label><input id="speed" type="number" min="0.1" max="150" step="0.1" value="42.3" required></div></div>
-      <p class="sample" id="sample">Showing sample stats. Add your own before sharing.</p>
-      <div class="step second"><span>02</span><h2>Make it yours</h2></div>
+      <p class="sample" id="sample">sample stats</p>
       <fieldset><legend>text colour</legend><div class="segmented"><button type="button" data-ink="white" aria-pressed="true">white</button><button type="button" data-ink="dark" aria-pressed="false">dark</button></div></fieldset>
       <label class="switch"><input type="checkbox" id="show-loop" checked><span>include the High Park loop</span></label>
       <div class="exports"><button class="primary" id="copy" type="button">Copy overlay</button><button id="save" type="button">Save PNG</button><button id="share" type="button" hidden>Share image</button></div>
       <p id="status" role="status" aria-live="polite"></p>
-      <p class="help">Transparent PNG · 1080 × 720<br>Add it as a photo sticker in your story, then resize and position it. Clipboard and sharing support varies by app; Save PNG is the fallback.</p>
+      <p class="help">Transparent PNG · choose a ratio, then add it over your ride photo.</p>
     </section>
   </div>
   <footer>lapped <span>your laps, wherever you post.</span></footer>
