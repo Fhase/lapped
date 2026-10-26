@@ -70,7 +70,7 @@ export function mountMobile(app, deps) {
     const challenge = String(req.query.challenge || ""), state = String(req.query.state || "");
     if (!/^[A-Za-z0-9_-]{43}$/.test(challenge) || !/^[A-Za-z0-9_-]{32,100}$/.test(state)) return res.sendStatus(400);
     res.set({ "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; form-action 'self'; frame-ancestors 'none'" });
-    res.type("html").send(`<!doctype html><html lang="en" data-theme="light"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in to Lapped for iPhone</title><link rel="stylesheet" href="/styles.css"><main><nav><a class="wordmark" href="/">Lapped</a></nav><section class="intro"><div><h1>Your laps. On iPhone.</h1><p class="lede">Connect your Strava account to see your own laps and rides in the local Lapped app.</p><form method="post" action="/auth/mobile/start"><input type="hidden" name="challenge" value="${challenge}"><input type="hidden" name="state" value="${state}"><label><input type="checkbox" name="consent" value="yes" required> I agree to lapped’s <a href="/privacy.html">data use and privacy policy</a> and <a href="/terms.html">terms</a>.</label><p><button type="submit">Connect with Strava</button></p></form></div></section></main></html>`);
+    res.type("html").send(`<!doctype html><html lang="en" data-theme="light"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in to lapped for iPhone</title><link rel="stylesheet" href="/styles.css"><main><nav><a class="wordmark" href="/">lapped</a></nav><section class="intro"><div><h1>Your laps. On iPhone.</h1><p class="lede">Connect your Strava account to see your own laps and rides in the local lapped app.</p><form method="post" action="/auth/mobile/start"><input type="hidden" name="challenge" value="${challenge}"><input type="hidden" name="state" value="${state}"><label><input type="checkbox" name="consent" value="yes" required> I agree to lapped’s <a href="/privacy.html">data use and privacy policy</a> and <a href="/terms.html">terms</a>.</label><p><button type="submit">Connect with Strava</button></p></form></div></section></main></html>`);
   });
   app.post("/auth/mobile/start", limit, (req, res) => {
     const challenge = String(req.body.challenge || ""), state = String(req.body.state || "");
@@ -92,7 +92,7 @@ export function mountMobile(app, deps) {
         return callback(res, { state: entry.deviceState, error: "Sign-in was cancelled or expired. Please try again." });
       }
       const scopes = String(req.query.scope || "").split(",");
-      if (!scopes.includes("activity:read_all") || !scopes.includes("activity:write")) return callback(res, { state: entry.deviceState, error: "Please allow the activity permissions Lapped needs." });
+      if (!scopes.includes("activity:read_all") || !scopes.includes("activity:write")) return callback(res, { state: entry.deviceState, error: "Please allow the activity permissions lapped needs." });
       const token = await deps.exchangeCode(String(req.query.code));
       if (!/^\d+$/.test(String(token.athlete?.id || "")) || !token.access_token || !token.refresh_token) throw new Error("Invalid Strava account response.");
       await saveToken(token);
@@ -130,7 +130,7 @@ export function mountMobile(app, deps) {
       const key = sha(bearer), entry = (await readEncryptedStore(sessionsFile))[key];
       if (!entry || entry.expiresAt <= Date.now()) return res.status(401).json({ error: "Your app session expired. Sign in again." });
       const token = (await readTokens())[entry.athleteId];
-      if (!token) return res.status(401).json({ error: "This account is no longer connected to Lapped." });
+      if (!token) return res.status(401).json({ error: "This account is no longer connected to lapped." });
       req.mobileAthleteId = entry.athleteId;
       req.mobileSessionKey = key;
       req.mobileAthlete = token.athlete;

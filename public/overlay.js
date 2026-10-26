@@ -52,7 +52,7 @@ function draw() {
     text(`·  ${speed.toFixed(1)} km/h`, speedX, y(546), size(30));
     ctx.globalAlpha = .65; ctx.fillRect(x(72), y(602), 936 * horizontalGapScale, 1); ctx.globalAlpha = 1;
     ctx.font = `700 ${size(32)}px Arial, sans-serif`;
-    ctx.fillText("Lapped", x(72), y(658));
+    ctx.fillText("lapped", x(72), y(658));
     text("lapped.fit", x(862), y(658), size(24));
     if (withLoop) {
       const loopScale = .62 * itemScale;
@@ -191,7 +191,7 @@ async function requestRide(path, options) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(body.error || (response.status === 404
-      ? "This local preview has no Lapped API server attached yet. Ride lookup will work on lapped.fit after rollout."
+      ? "This local preview has no lapped API server attached yet. Ride lookup will work on lapped.fit after rollout."
       : "Could not load that ride."));
     error.status = response.status;
     throw error;
