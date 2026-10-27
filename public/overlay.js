@@ -99,16 +99,10 @@ function drawRedesigned(metrics, itemScale) {
   };
   if (overlayStyle === "stack") {
     metrics.forEach(([, value], index) => {
-      const top = 54 + index * 72;
+      const top = 54 + index * 56;
       number(value, center, top, "center", 43, 350);
-      if (index < metrics.length - 1) {
-        ctx.save();
-        ctx.fillStyle = ink === "white" ? "#fc4c02" : "#b93808";
-        ctx.fillRect(center - 3, top + 25, 6, 2);
-        ctx.restore();
-      }
     });
-    siteLink(center, 336, "center");
+    siteLink(center, 300, "center");
   } else if (overlayStyle === "ledger") {
     const gridLeft = 72, gridRight = 1008;
     const rowBaseline = 560, scale = itemScale / .8;
