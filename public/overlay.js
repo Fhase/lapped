@@ -24,7 +24,7 @@ function text(value, x, y, size) {
   ctx.font = `500 ${size}px Helvetica, Arial, sans-serif`;
   ctx.fillText(value, x, y);
 }
-function numberText(value, x, y, size, weight = 500) {
+function numberText(value, x, y, size, weight = 400) {
   ctx.font = `${weight} ${size}px "Geist Mono", monospace`;
   ctx.textAlign = "left";
   ctx.fillText(value, x, y);
@@ -42,7 +42,7 @@ function drawCompact(stats, itemScale, horizontalGapScale) {
   };
   const number = (value, x, y, fontSize = 54, align = "left") => {
     ctx.textAlign = align;
-    ctx.font = `500 ${fontSize * itemScale}px "Geist Mono", monospace`;
+    ctx.font = `400 ${fontSize * itemScale}px "Geist Mono", monospace`;
     ctx.fillText(value, x, y);
   };
   const line = (x1, y, x2, alpha = .4) => {
@@ -145,7 +145,10 @@ function draw() {
     // the vertical rhythm between lines.
     const fitScale = Math.min(canvas.width / 1080, canvas.height / 720);
     // The former 90% setting is the new 100% reference size.
-    const itemScale = .9 + (Number($("#overlay-scale").value) - 100) / 100;
+    const sliderValue = Number($("#overlay-scale").value);
+    const itemScale = overlayStyle === "original"
+      ? .8 + (sliderValue - 100) / 100
+      : .9 + (sliderValue - 100) / 100;
     const horizontalGapScale = 1 + (1 - itemScale) * .5;
     const x = (value) => 540 + (value - 540) * horizontalGapScale;
     const y = (value) => value;
