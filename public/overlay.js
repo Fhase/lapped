@@ -160,10 +160,11 @@ function draw() {
       const layoutScale = itemScale / .9;
       if (overlayStyle === "ledger") {
         // UI scaling: keep the ledger grid full width and scale its type and rhythm in place.
-        drawRedesigned(redesignedMetrics(), .8 * (Number($("#overlay-scale").value) / 100));
+        drawRedesigned(redesignedMetrics(), 1 * (Number($("#overlay-scale").value) / 100));
       } else {
         ctx.save();
-        ctx.translate(540, 360); ctx.scale(layoutScale, layoutScale); ctx.translate(-540, -360);
+        const stackScale = layoutScale * 1.25;
+        ctx.translate(540, 195); ctx.scale(stackScale, stackScale); ctx.translate(-540, -195);
         drawRedesigned(redesignedMetrics(), .9);
         ctx.restore();
       }
