@@ -1414,7 +1414,11 @@ async function getOverlayRide(athleteId, activityId, token) {
     title: String(activity.name || "ride").slice(0, 120),
     date: activity.start_date_local || activity.start_date || null,
     laps: efforts.length,
-    fastestLap: overlayFastestLap(efforts)
+    fastestLap: overlayFastestLap(efforts),
+    distanceMeters: Number.isFinite(activity.distance) ? activity.distance : null,
+    averageSpeedMps: Number.isFinite(activity.average_speed) ? activity.average_speed : null,
+    normalizedPowerWatts: Number.isFinite(activity.weighted_average_watts) ? activity.weighted_average_watts : null,
+    elapsedSeconds: Number.isFinite(activity.elapsed_time) ? activity.elapsed_time : null
   };
   overlayRideDetailCache.set(key, { ride, checkedAt: Date.now() });
   return ride;

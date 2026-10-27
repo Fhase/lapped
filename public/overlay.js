@@ -1,9 +1,15 @@
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#overlay"), ctx = canvas.getContext("2d");
+const localHost = /^(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3})$/.test(location.hostname);
+const previewParams = new URLSearchParams(location.search);
+const designPreview = localHost && ["styles", "styles-two"].includes(previewParams.get("preview"));
 const route = new Path2D("M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z");
 let ink = "white", overlayStyle = "original", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart, loadedRide = false;
+let rideMetrics = { distanceMeters: null, averageSpeedMps: null, normalizedPowerWatts: null, elapsedSeconds: null };
 const ratios = { square: [1080, 1080], story: [1080, 1920], portrait: [1080, 1350], landscape: [1920, 1080] };
 const status = (text) => { $("#status").textContent = text; };
+
+function usesRideMetrics(style = overlayStyle) { return style === "stack" || style === "ledger"; }
 
 function values() {
   const lapInput = $("#laps").textContent.trim(), speedInput = $("#speed").textContent.trim(), time = $("#time").textContent.trim();
@@ -53,20 +59,82 @@ function drawCompact(stats, itemScale, horizontalGapScale) {
   }
   ctx.textAlign = "left";
 }
+function formatElapsed(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const total = Math.round(seconds), hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60), remainder = total % 60;
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}` : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+function redesignedMetrics() {
+  const distance = Number(rideMetrics.distanceMeters);
+  const speed = Number(rideMetrics.averageSpeedMps);
+  const power = Number(rideMetrics.normalizedPowerWatts);
+  const elapsed = Number(rideMetrics.elapsedSeconds);
+  return [
+    ["distance", Number.isFinite(distance) && distance > 0 ? `${(distance / 1000).toFixed(1)} km` : "—"],
+    ["average speed", Number.isFinite(speed) && speed > 0 ? `${(speed * 3.6).toFixed(1)} km/h` : "—"],
+    ["normalized power", Number.isFinite(power) && power > 0 ? `${Math.round(power)} W` : "—"],
+    ["elapsed time", formatElapsed(elapsed)]
+  ];
+}
+function drawRedesigned(metrics, itemScale) {
+  const center = 540;
+  const line = (x1, y, x2, alpha = .34) => {
+    ctx.globalAlpha = alpha; ctx.fillRect(x1, y, x2 - x1, 1); ctx.globalAlpha = 1;
+  };
+  const number = (value, x, y, align = "center", size = 42, weight = 400) => {
+    ctx.font = `${weight} ${size * itemScale}px "Geist Mono", monospace`;
+    ctx.textAlign = align;
+    ctx.fillText(value, x, y);
+  };
+  const siteLink = (x, y, align = "left") => {
+    ctx.font = `500 ${24 * itemScale}px Helvetica, Arial, sans-serif`;
+    ctx.textAlign = align;
+    ctx.fillText("lapped.fit", x, y);
+  };
+  if (overlayStyle === "stack") {
+    metrics.forEach(([, value], index) => {
+      const top = 54 + index * 72;
+      number(value, center, top, "center", 43, 350);
+      if (index < metrics.length - 1) {
+        ctx.save();
+        ctx.fillStyle = ink === "white" ? "#fc4c02" : "#b93808";
+        ctx.fillRect(center - 3, top + 25, 6, 2);
+        ctx.restore();
+      }
+    });
+    siteLink(center, 336, "center");
+  } else if (overlayStyle === "ledger") {
+    const gridLeft = 72, gridRight = 1008;
+    const rowBaseline = 560, scale = itemScale / .8;
+    metrics.forEach(([, value], index) => {
+      const x = gridLeft + (gridRight - gridLeft) * (index + .5) / metrics.length;
+      number(value, x, rowBaseline, "center", 39, 400);
+    });
+    line(gridLeft, rowBaseline - 50 * scale, gridRight, .45);
+    line(gridLeft, rowBaseline + 28 * scale, gridRight, .45);
+    siteLink(862, rowBaseline + 80 * scale);
+  }
+  ctx.textAlign = "left";
+}
 function draw() {
   currentBlob = null;
   try {
     // The canvas is always transparent. Photo/checker backgrounds belong to CSS only.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const stats = values();
-    if (!loadedRide || !stats) {
+    if (!loadedRide) {
       $("#copy").disabled = $("#save").disabled = $("#share").disabled = true;
       return;
     }
-    const { laps, speed, time } = stats;
+    const redesignedStyle = usesRideMetrics();
+    const stats = redesignedStyle ? null : values();
+    if (!redesignedStyle && !stats) {
+      $("#copy").disabled = $("#save").disabled = $("#share").disabled = true;
+      return;
+    }
     ctx.save();
     ctx.fillStyle = ink === "white" ? "#ffffff" : "#20201e";
-    const withLoop = $("#show-loop").checked;
+    const withLoop = !redesignedStyle && $("#show-loop").checked;
     // Taller canvases add transparent room above the composition. The scale
     // control changes type/icon size and horizontal spacing without stretching
     // the vertical rhythm between lines.
@@ -77,12 +145,24 @@ function draw() {
     const x = (value) => 540 + (value - 540) * horizontalGapScale;
     const y = (value) => value;
     const size = (value) => value * itemScale;
-    const originalBottomPadding = overlayStyle === "original" ? 60 * fitScale : 0;
+    const originalBottomPadding = !redesignedStyle && overlayStyle === "original" ? 60 * fitScale : 0;
     ctx.translate((canvas.width - 1080 * fitScale) / 2, canvas.height - 720 * fitScale - originalBottomPadding);
     ctx.scale(fitScale, fitScale);
-    if (overlayStyle === "studio") {
+    if (redesignedStyle) {
+      const layoutScale = itemScale / .9;
+      if (overlayStyle === "ledger") {
+        // UI scaling: keep the ledger grid full width and scale its type and rhythm in place.
+        drawRedesigned(redesignedMetrics(), .8 * (Number($("#overlay-scale").value) / 100));
+      } else {
+        ctx.save();
+        ctx.translate(540, 360); ctx.scale(layoutScale, layoutScale); ctx.translate(-540, -360);
+        drawRedesigned(redesignedMetrics(), .9);
+        ctx.restore();
+      }
+    } else if (overlayStyle === "studio") {
       drawCompact(stats, itemScale, 1);
     } else {
+    const { laps, speed, time } = stats;
     text("high park laps", x(72), y(365), size(24));
     text(laps.toLocaleString("en-CA"), x(72), y(486), size(laps > 999 ? 118 : 148));
     text("laps", x(72), y(523), size(26));
@@ -109,10 +189,15 @@ function draw() {
 }
 $("#show-loop").addEventListener("change", draw);
 document.querySelectorAll("[data-style]").forEach((button) => button.addEventListener("click", () => {
+  if (button.hidden) return;
   overlayStyle = button.dataset.style;
   document.querySelectorAll("[data-style]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-  $("#loop-option").hidden = overlayStyle !== "original";
-  $(".preview-note").textContent = overlayStyle === "original"
+  $("#loop-option").hidden = usesRideMetrics() || overlayStyle !== "original";
+  $(".fields-laps").hidden = usesRideMetrics();
+  $(".fields-ride").hidden = !usesRideMetrics();
+  $(".preview-note").textContent = usesRideMetrics()
+    ? "ride metrics · normalized power appears when Strava has a value."
+    : overlayStyle === "original"
     ? "Your photo stays in this browser. Only the text and loop are exported."
     : "Your photo stays in this browser. Only the text is exported.";
   draw();
@@ -249,8 +334,20 @@ async function requestRide(path, options) {
   return body;
 }
 function showRide(ride) {
+  const metric = (value) => value == null || !Number.isFinite(Number(value)) ? null : Number(value);
+  rideMetrics = {
+    distanceMeters: metric(ride?.distanceMeters),
+    averageSpeedMps: metric(ride?.averageSpeedMps),
+    normalizedPowerWatts: metric(ride?.normalizedPowerWatts),
+    elapsedSeconds: metric(ride?.elapsedSeconds)
+  };
+  const [distance, speed, power, elapsed] = redesignedMetrics().map(([, value]) => value);
+  $("#ride-distance").textContent = distance;
+  $("#ride-average-speed").textContent = speed;
+  $("#ride-normalized-power").textContent = power;
+  $("#ride-elapsed-time").textContent = elapsed;
+  loadedRide = Boolean(ride);
   if (!ride?.laps) {
-    loadedRide = false;
     $("#laps").textContent = ""; $("#time").textContent = ""; $("#speed").textContent = "";
     draw();
     rideMessage("No completed High Park laps on this ride, so there’s nothing to add.");
@@ -259,7 +356,6 @@ function showRide(ride) {
   $("#laps").textContent = String(ride.laps);
   $("#time").textContent = ride.fastestLap?.time || "";
   $("#speed").textContent = ride.fastestLap?.speedKmh || "";
-  loadedRide = true;
   draw();
   const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";
   rideMessage(`${ride.title || "ride"}${date} · ${ride.laps} High Park lap${ride.laps === 1 ? "" : "s"}`);
@@ -299,9 +395,9 @@ $("#ride-link-form").addEventListener("submit", async (event) => {
   catch (error) { rideMessage(error.status === 401 ? "Connect Strava to load one of your rides." : error.message, error.status === 401); }
   finally { button.disabled = false; button.textContent = "load ride"; }
 });
-function download(blob) {
+function download(blob, filename = "lapped-ride-overlay.png") {
   const url = URL.createObjectURL(blob), a = document.createElement("a");
-  a.href = url; a.download = "lapped-ride-overlay.png"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+  a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 $("#copy").addEventListener("click", async () => {
   if (!currentBlob) return;
@@ -320,13 +416,16 @@ $("#share").addEventListener("click", async () => {
   catch (error) { if (error.name !== "AbortError") status("Sharing isn’t available here. Use Save PNG instead."); }
 });
 draw();
-const designPreview = new URLSearchParams(location.search).get("preview") === "styles"
-  && /^(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3})$/.test(location.hostname);
 if (designPreview) {
   $("#recent-ride").replaceChildren(new Option("design preview · example ride", ""));
   $("#recent-ride").disabled = $("#ride-link").disabled = $("#load-link").disabled = true;
-  showRide({ title: "design preview · example ride", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 } });
-  document.querySelector('[data-style="studio"]').click();
+  showRide({ title: "design preview · example ride", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 }, distanceMeters: 42800, averageSpeedMps: 7.65, normalizedPowerWatts: 246, elapsedSeconds: 6138 });
+  const previewStyle = previewParams.get("style");
+  const availableStyles = ["original", "studio", "stack", "ledger"];
+  document.querySelector(`[data-style="${availableStyles.includes(previewStyle) ? previewStyle : availableStyles[0]}"]`).click();
 } else {
   loadRecentRides();
+}
+if (document.fonts) {
+  document.fonts.load('400 24px "Geist Mono"').then(draw);
 }

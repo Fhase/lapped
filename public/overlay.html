@@ -14,6 +14,8 @@
   <fieldset class="style-picker"><legend>overlay style</legend><div class="style-options">
     <button type="button" data-style="original" aria-pressed="true"><span class="style-swatch swatch-original" aria-hidden="true"><i></i><i></i><i></i></span><span>original</span></button>
     <button type="button" data-style="studio" aria-pressed="false"><span class="style-swatch swatch-studio" aria-hidden="true"><i></i><i></i><i></i></span><span>studio</span></button>
+    <button type="button" data-style="stack" aria-pressed="false"><span class="style-swatch swatch-stack" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>stack</span></button>
+    <button type="button" data-style="ledger" aria-pressed="false"><span class="style-swatch swatch-ledger" aria-hidden="true"><i></i><i></i><i></i></span><span>ledger</span></button>
   </div></fieldset>
   <div class="workspace">
     <section class="preview-column" aria-label="Overlay preview">
@@ -26,7 +28,8 @@
       <p class="preview-note">Your photo stays in this browser. Only the text and loop are exported.</p>
     </section>
     <section class="editor" aria-label="Customize your ride overlay">
-      <div class="fields" aria-label="Ride stats from the selected Strava ride"><div><span class="field-label">laps</span><output class="stat-value" id="laps" aria-label="laps"></output></div><div><span class="field-label">fastest lap</span><output class="stat-value" id="time" aria-label="fastest lap"></output></div><div><span class="field-label">speed · km/h</span><output class="stat-value" id="speed" aria-label="speed in kilometres per hour"></output></div></div>
+      <div class="fields fields-laps" aria-label="Lap stats from the selected Strava ride"><div><span class="field-label">laps</span><output class="stat-value" id="laps" aria-label="laps"></output></div><div><span class="field-label">fastest lap</span><output class="stat-value" id="time" aria-label="fastest lap"></output></div><div><span class="field-label">speed · km/h</span><output class="stat-value" id="speed" aria-label="speed in kilometres per hour"></output></div></div>
+      <div class="fields fields-ride" aria-label="Ride stats from the selected Strava ride" hidden><div><span class="field-label">distance</span><output class="stat-value" id="ride-distance" aria-label="distance"></output></div><div><span class="field-label">average speed</span><output class="stat-value" id="ride-average-speed" aria-label="average speed"></output></div><div><span class="field-label">normalized power</span><output class="stat-value" id="ride-normalized-power" aria-label="normalized power"></output></div><div><span class="field-label">elapsed time</span><output class="stat-value" id="ride-elapsed-time" aria-label="elapsed time"></output></div></div>
       <label class="switch" id="loop-option"><input type="checkbox" id="show-loop" checked><span>include the high park loop</span></label>
       <div class="exports"><button class="primary" id="copy" type="button">Copy overlay</button><button id="save" type="button">Save PNG</button><button id="share" type="button" hidden>Share image</button></div>
       <p id="status" role="status" aria-live="polite"></p>
