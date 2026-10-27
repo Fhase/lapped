@@ -119,7 +119,7 @@ function drawRedesigned(metrics, itemScale) {
 function draw() {
   currentBlob = null;
   try {
-    // The canvas is always transparent. Photo/checker backgrounds belong to CSS only.
+    // The canvas is always transparent. Photo/gradient backgrounds belong to CSS only.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!loadedRide) {
       $("#copy").disabled = $("#save").disabled = $("#share").disabled = true;
@@ -205,6 +205,7 @@ document.querySelectorAll("[data-style]").forEach((button) => button.addEventLis
 }));
 document.querySelectorAll("[data-ink]").forEach((button) => button.addEventListener("click", () => {
   ink = button.dataset.ink;
+  $("#preview").dataset.ink = ink;
   document.querySelectorAll("[data-ink]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   draw();
 }));
@@ -267,7 +268,7 @@ $("#preview").addEventListener("pointerup", () => { dragStart = null; });
 $("#preview").addEventListener("pointercancel", () => { dragStart = null; });
 $("#remove-photo").addEventListener("click", () => {
   $("#photo").value = "";
-  background("checker");
+  background("gradient");
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = null; photoImage = null; cropX = cropY = 50;
   status("Photo removed.");
