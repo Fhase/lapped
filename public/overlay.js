@@ -1,7 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const canvas = $("#overlay"), ctx = canvas.getContext("2d");
 const route = new Path2D("M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z");
-let ink = "white", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart, loadedRide = false;
+let ink = "white", overlayStyle = "original", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart, loadedRide = false;
 const ratios = { square: [1080, 1080], story: [1080, 1920], portrait: [1080, 1350], landscape: [1920, 1080] };
 const status = (text) => { $("#status").textContent = text; };
 
@@ -14,9 +14,44 @@ function values() {
   if (!Number.isFinite(speed) || speed <= 0 || speed > 150) throw new Error("Enter a speed between 0.1 and 150 km/h.");
   return { laps, speed, time };
 }
-function text(value, x, y, size, serif = false) {
-  ctx.font = `${serif ? "400" : "500"} ${size}px ${serif ? "Georgia, serif" : "Arial, sans-serif"}`;
+function text(value, x, y, size) {
+  ctx.font = `500 ${size}px Helvetica, Arial, sans-serif`;
   ctx.fillText(value, x, y);
+}
+// Compact styles share the same transparent canvas and verified ride values.
+function drawCompact(stats, itemScale, horizontalGapScale) {
+  const { laps, time, speed } = stats;
+  const left = 72;
+  const right = 1008;
+  const bottom = 648;
+  const label = (value, x, y, align = "left") => {
+    ctx.textAlign = align;
+    ctx.font = `400 ${19 * itemScale}px Helvetica, Arial, sans-serif`;
+    ctx.fillText(value, x, y);
+  };
+  const number = (value, x, y, fontSize = 54, align = "left") => {
+    ctx.textAlign = align;
+    ctx.font = `500 ${fontSize * itemScale}px Helvetica, Arial, sans-serif`;
+    ctx.fillText(value, x, y);
+  };
+  const line = (x1, y, x2, alpha = .4) => {
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(x1, y, x2 - x1, 1);
+    ctx.globalAlpha = 1;
+  };
+  if (overlayStyle === "studio") {
+    label("high park / ride data", left, bottom - 155);
+    label("lapped.fit", right, bottom - 155, "right");
+    line(left, bottom - 133, right);
+    const columns = [left, (left + right) / 2, right];
+    const alignments = ["left", "center", "right"];
+    const metrics = [[laps.toLocaleString("en-CA"), "laps"], [time, "fastest lap"], [speed.toFixed(1), "km/h"]];
+    metrics.forEach(([value, title], index) => {
+      number(value, columns[index], bottom - 49, 54, alignments[index]);
+      label(title, columns[index], bottom - 9, alignments[index]);
+    });
+  }
+  ctx.textAlign = "left";
 }
 function draw() {
   currentBlob = null;
@@ -36,28 +71,34 @@ function draw() {
     // control changes type/icon size and horizontal spacing without stretching
     // the vertical rhythm between lines.
     const fitScale = Math.min(canvas.width / 1080, canvas.height / 720);
-    const itemScale = Number($("#overlay-scale").value) / 100;
+    // The former 90% setting is the new 100% reference size.
+    const itemScale = .9 + (Number($("#overlay-scale").value) - 100) / 100;
     const horizontalGapScale = 1 + (1 - itemScale) * .5;
     const x = (value) => 540 + (value - 540) * horizontalGapScale;
     const y = (value) => value;
     const size = (value) => value * itemScale;
-    ctx.translate((canvas.width - 1080 * fitScale) / 2, canvas.height - 720 * fitScale);
+    const originalBottomPadding = overlayStyle === "original" ? 60 * fitScale : 0;
+    ctx.translate((canvas.width - 1080 * fitScale) / 2, canvas.height - 720 * fitScale - originalBottomPadding);
     ctx.scale(fitScale, fitScale);
-    text("high park laps", x(72), y(92), size(24));
-    text(laps.toLocaleString("en-CA"), x(72), y(330), size(laps > 999 ? 170 : 220), true);
-    text("laps", x(72), y(408), size(30));
-    text("fastest lap", x(72), y(465), size(24));
-    text(time, x(72), y(550), size(80), true);
+    if (overlayStyle === "studio") {
+      drawCompact(stats, itemScale, 1);
+    } else {
+    text("high park laps", x(72), y(365), size(24));
+    text(laps.toLocaleString("en-CA"), x(72), y(486), size(laps > 999 ? 118 : 148));
+    text("laps", x(72), y(523), size(26));
+    text("fastest lap", x(72), y(566), size(21));
+    text(time, x(72), y(645), size(70));
     const speedX = x(72) + ctx.measureText(time).width + 26 * horizontalGapScale;
-    text(`·  ${speed.toFixed(1)} km/h`, speedX, y(546), size(30));
-    ctx.globalAlpha = .65; ctx.fillRect(x(72), y(602), 936 * horizontalGapScale, 1); ctx.globalAlpha = 1;
+    text(`·  ${speed.toFixed(1)} km/h`, speedX, y(640), size(27));
+    ctx.globalAlpha = .65; ctx.fillRect(x(72), y(668), 936 * horizontalGapScale, 1); ctx.globalAlpha = 1;
     ctx.font = `700 ${size(32)}px Arial, sans-serif`;
-    ctx.fillText("lapped", x(72), y(658));
-    text("lapped.fit", x(862), y(658), size(24));
+    ctx.fillText("lapped", x(72), y(708));
+    text("lapped.fit", x(862), y(708), size(24));
     if (withLoop) {
-      const loopScale = .62 * itemScale;
-      ctx.save(); ctx.translate(x(1008) - 342 * loopScale, y(550) - 718 * loopScale); ctx.scale(loopScale, loopScale);
+      const loopScale = .46 * itemScale;
+      ctx.save(); ctx.translate(x(1008) - 342 * loopScale, y(622) - 718 * loopScale); ctx.scale(loopScale, loopScale);
       ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.stroke(route); ctx.restore();
+    }
     }
     ctx.restore();
     currentBlob = new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Couldn’t prepare the PNG.")), "image/png"));
@@ -67,6 +108,15 @@ function draw() {
   $("#copy").disabled = $("#save").disabled = $("#share").disabled = !currentBlob;
 }
 $("#show-loop").addEventListener("change", draw);
+document.querySelectorAll("[data-style]").forEach((button) => button.addEventListener("click", () => {
+  overlayStyle = button.dataset.style;
+  document.querySelectorAll("[data-style]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+  $("#loop-option").hidden = overlayStyle !== "original";
+  $(".preview-note").textContent = overlayStyle === "original"
+    ? "Your photo stays in this browser. Only the text and loop are exported."
+    : "Your photo stays in this browser. Only the text is exported.";
+  draw();
+}));
 document.querySelectorAll("[data-ink]").forEach((button) => button.addEventListener("click", () => {
   ink = button.dataset.ink;
   document.querySelectorAll("[data-ink]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
@@ -270,4 +320,13 @@ $("#share").addEventListener("click", async () => {
   catch (error) { if (error.name !== "AbortError") status("Sharing isn’t available here. Use Save PNG instead."); }
 });
 draw();
-loadRecentRides();
+const designPreview = new URLSearchParams(location.search).get("preview") === "styles"
+  && /^(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3})$/.test(location.hostname);
+if (designPreview) {
+  $("#recent-ride").replaceChildren(new Option("design preview · example ride", ""));
+  $("#recent-ride").disabled = $("#ride-link").disabled = $("#load-link").disabled = true;
+  showRide({ title: "design preview · example ride", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 } });
+  document.querySelector('[data-style="studio"]').click();
+} else {
+  loadRecentRides();
+}
