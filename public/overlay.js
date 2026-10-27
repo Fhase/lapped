@@ -24,6 +24,11 @@ function text(value, x, y, size) {
   ctx.font = `500 ${size}px Helvetica, Arial, sans-serif`;
   ctx.fillText(value, x, y);
 }
+function numberText(value, x, y, size, weight = 500) {
+  ctx.font = `${weight} ${size}px "Geist Mono", monospace`;
+  ctx.textAlign = "left";
+  ctx.fillText(value, x, y);
+}
 // Compact styles share the same transparent canvas and verified ride values.
 function drawCompact(stats, itemScale, horizontalGapScale) {
   const { laps, time, speed } = stats;
@@ -37,7 +42,7 @@ function drawCompact(stats, itemScale, horizontalGapScale) {
   };
   const number = (value, x, y, fontSize = 54, align = "left") => {
     ctx.textAlign = align;
-    ctx.font = `500 ${fontSize * itemScale}px Helvetica, Arial, sans-serif`;
+    ctx.font = `500 ${fontSize * itemScale}px "Geist Mono", monospace`;
     ctx.fillText(value, x, y);
   };
   const line = (x1, y, x2, alpha = .4) => {
@@ -164,15 +169,13 @@ function draw() {
     } else {
     const { laps, speed, time } = stats;
     text("high park laps", x(72), y(365), size(24));
-    text(laps.toLocaleString("en-CA"), x(72), y(486), size(laps > 999 ? 118 : 148));
+    numberText(laps.toLocaleString("en-CA"), x(72), y(486), size(laps > 999 ? 118 : 148));
     text("laps", x(72), y(523), size(26));
     text("fastest lap", x(72), y(566), size(21));
-    text(time, x(72), y(645), size(70));
+    numberText(time, x(72), y(645), size(70));
     const speedX = x(72) + ctx.measureText(time).width + 26 * horizontalGapScale;
-    text(`·  ${speed.toFixed(1)} km/h`, speedX, y(640), size(27));
+    numberText(`·  ${speed.toFixed(1)} km/h`, speedX, y(640), size(27));
     ctx.globalAlpha = .65; ctx.fillRect(x(72), y(668), 936 * horizontalGapScale, 1); ctx.globalAlpha = 1;
-    ctx.font = `700 ${size(32)}px Arial, sans-serif`;
-    ctx.fillText("lapped", x(72), y(708));
     text("lapped.fit", x(862), y(708), size(24));
     if (withLoop) {
       const loopScale = .46 * itemScale;
