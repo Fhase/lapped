@@ -121,6 +121,11 @@ function draw() {
   try {
     // The canvas is always transparent. Photo/gradient backgrounds belong to CSS only.
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    $("#ride-editor").hidden = !loadedRide;
+    const noLaps = loadedRide && !usesRideMetrics() && !values();
+    $("#no-laps-message").hidden = !noLaps;
+    canvas.hidden = Boolean(noLaps);
+    $(".preview-tag").hidden = Boolean(noLaps);
     if (!loadedRide) {
       $("#copy").disabled = $("#save").disabled = $("#share").disabled = true;
       return;
@@ -203,10 +208,10 @@ document.querySelectorAll("[data-style]").forEach((button) => button.addEventLis
     : "Your photo stays in this browser. Only the text is exported.";
   draw();
 }));
-document.querySelectorAll("[data-ink]").forEach((button) => button.addEventListener("click", () => {
+document.querySelectorAll("button[data-ink]").forEach((button) => button.addEventListener("click", () => {
   ink = button.dataset.ink;
   $("#preview").dataset.ink = ink;
-  document.querySelectorAll("[data-ink]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+  document.querySelectorAll("button[data-ink]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
   draw();
 }));
 function background(value) {
@@ -352,7 +357,7 @@ function showRide(ride) {
   if (!ride?.laps) {
     $("#laps").textContent = ""; $("#time").textContent = ""; $("#speed").textContent = "";
     draw();
-    rideMessage("No completed High Park laps on this ride, so there’s nothing to add.");
+    rideMessage(`${ride.title || "ride"} · no High Park laps detected. Stack and ledger can still show your ride stats.`);
     return;
   }
   $("#laps").textContent = String(ride.laps);
@@ -362,8 +367,15 @@ function showRide(ride) {
   const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";
   rideMessage(`${ride.title || "ride"}${date} · ${ride.laps} High Park lap${ride.laps === 1 ? "" : "s"}`);
 }
+const previewRide = { title: "example ride · High Park morning", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 }, distanceMeters: 42800, averageSpeedMps: 7.65, normalizedPowerWatts: 246, elapsedSeconds: 6138 };
 async function loadRide(id) {
+  if (!id) { loadedRide = false; draw(); rideMessage("Choose a ride to make your overlay."); return; }
+  if (designPreview) {
+    showRide(id === "demo-no-laps" ? { ...previewRide, title: "example ride · city ride", laps: 0, fastestLap: null } : previewRide);
+    return;
+  }
   if (!/^\d+$/.test(String(id))) return;
+  loadedRide = false; draw();
   rideMessage("loading ride…");
   $("#recent-ride").disabled = true;
   try { showRide(await requestRide(`/api/overlay/rides/${encodeURIComponent(id)}`)); }
@@ -381,21 +393,34 @@ async function loadRecentRides() {
       select.add(new Option(`${ride.title || "ride"}${date}`, ride.id));
     }
     if (!rides.length) rideMessage("No recent rides found on this Strava account.");
-    else rideMessage("Choose a recent ride or paste a link to make your overlay.");
+    else rideMessage("Choose a ride to make your overlay.");
   } catch (error) {
     select.replaceChildren(new Option(error.status === 401 ? "connect strava to load rides" : "recent rides unavailable", ""));
     rideMessage(error.status === 401 ? "Connect Strava to choose one of your rides." : error.message, error.status === 401);
   }
 }
+$("#ride-source-toggle").addEventListener("click", () => {
+  const useLink = $("#ride-link-form").hidden;
+  $("#ride-link-form").hidden = !useLink;
+  $("#recent-ride-source").hidden = useLink;
+  $("#ride-source-toggle").textContent = useLink ? "choose a recent ride instead" : "use ride link instead";
+  $("#ride-source-toggle").setAttribute("aria-expanded", String(useLink));
+  if (useLink) $("#ride-link").focus();
+});
+document.querySelectorAll("[data-suggest-style]").forEach(button => button.addEventListener("click", () => {
+  document.querySelector(`[data-style="${button.dataset.suggestStyle}"]`).click();
+}));
 $("#recent-ride").addEventListener("change", (event) => loadRide(event.target.value));
 $("#ride-link-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = $("#ride-link").value.trim();
   if (!url) return rideMessage("Paste a Strava ride link first.");
+  if (designPreview) return rideMessage("This is a local design preview. Choose an example ride from the recent ride list to try the editor.");
+  loadedRide = false; draw();
   const button = $("#load-link"); button.disabled = true; button.textContent = "loading…";
   try { showRide(await requestRide("/api/overlay/rides/lookup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) })); }
   catch (error) { rideMessage(error.status === 401 ? "Connect Strava to load one of your rides." : error.message, error.status === 401); }
-  finally { button.disabled = false; button.textContent = "load ride"; }
+  finally { button.disabled = false; button.textContent = "use this ride"; }
 });
 function download(blob, filename = "lapped-ride-overlay.png") {
   const url = URL.createObjectURL(blob), a = document.createElement("a");
@@ -419,9 +444,8 @@ $("#share").addEventListener("click", async () => {
 });
 draw();
 if (designPreview) {
-  $("#recent-ride").replaceChildren(new Option("design preview · example ride", ""));
-  $("#recent-ride").disabled = $("#ride-link").disabled = $("#load-link").disabled = true;
-  showRide({ title: "design preview · example ride", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 }, distanceMeters: 42800, averageSpeedMps: 7.65, normalizedPowerWatts: 246, elapsedSeconds: 6138 });
+  $("#recent-ride").replaceChildren(new Option("choose an example ride…", ""), new Option("High Park morning · 14 laps", "demo-laps"), new Option("City ride · no High Park laps", "demo-no-laps"));
+  rideMessage("Local design preview · choose an example ride to get started.");
   const previewStyle = previewParams.get("style");
   const availableStyles = ["original", "studio", "stack", "ledger"];
   document.querySelector(`[data-style="${availableStyles.includes(previewStyle) ? previewStyle : availableStyles[0]}"]`).click();
