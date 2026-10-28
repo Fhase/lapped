@@ -148,8 +148,11 @@ function draw() {
     const itemScale = overlayStyle === "original"
       ? .8 + (sliderValue - 100) / 100
       : .9 + (sliderValue - 100) / 100;
-    const horizontalGapScale = 1 + (1 - itemScale) * .5;
-    const x = (value) => 540 + (value - 540) * horizontalGapScale;
+    // Keep the original layout's columns and edge anchors fixed, like studio.
+    // The slider scales the content inside those bounds rather than widening
+    // the composition as type gets smaller.
+    const horizontalGapScale = 1;
+    const x = (value) => value;
     const y = (value) => value;
     const size = (value) => value * itemScale;
     const originalBottomPadding = !redesignedStyle && overlayStyle === "original" ? 60 * fitScale : 0;
