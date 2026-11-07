@@ -5,7 +5,7 @@ const previewParams = new URLSearchParams(location.search);
 const designPreview = localHost && ["styles", "styles-two"].includes(previewParams.get("preview"));
 const route = new Path2D("M279 42 C251 42 239 87 218 121 C194 161 168 190 132 211 C94 234 63 264 62 300 C60 330 80 347 85 370 C92 400 96 430 99 450 C103 477 96 497 99 520 C101 554 130 622 143 655 C156 686 181 700 210 708 C222 712 235 716 246 715 C270 718 300 707 312 684 C326 660 341 642 338 619 C333 590 309 570 303 535 C297 505 298 470 306 445 C315 412 289 385 286 358 C284 330 299 283 305 245 C312 205 311 157 310 88 C310 57 300 43 279 42 Z");
 let ink = "white", overlayStyle = "original", photoUrl, photoImage, currentBlob, cropX = 50, cropY = 50, dragStart, loadedRide = false;
-let rideMetrics = { distanceMeters: null, averageSpeedMps: null, normalizedPowerWatts: null, elapsedSeconds: null };
+let rideMetrics = { distanceMeters: null, averageSpeedMps: null, normalizedPowerWatts: null, movingSeconds: null };
 const ratios = { square: [1080, 1080], story: [1080, 1920], portrait: [1080, 1350], landscape: [1920, 1080] };
 const status = (text) => { $("#status").textContent = text; };
 
@@ -64,7 +64,7 @@ function drawCompact(stats, itemScale, horizontalGapScale) {
   }
   ctx.textAlign = "left";
 }
-function formatElapsed(seconds) {
+function formatDuration(seconds) {
   if (!Number.isFinite(seconds) || seconds <= 0) return "—";
   const total = Math.round(seconds), hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60), remainder = total % 60;
@@ -74,12 +74,11 @@ function redesignedMetrics() {
   const distance = Number(rideMetrics.distanceMeters);
   const speed = Number(rideMetrics.averageSpeedMps);
   const power = Number(rideMetrics.normalizedPowerWatts);
-  const elapsed = Number(rideMetrics.elapsedSeconds);
   return [
     ["distance", Number.isFinite(distance) && distance > 0 ? `${(distance / 1000).toFixed(1)} km` : "—"],
     ["average speed", Number.isFinite(speed) && speed > 0 ? `${(speed * 3.6).toFixed(1)} km/h` : "—"],
     ["normalized power", Number.isFinite(power) && power > 0 ? `${Math.round(power)} W` : "—"],
-    ["elapsed time", formatElapsed(elapsed)]
+    ["riding time", formatDuration(rideMetrics.movingSeconds)]
   ];
 }
 function drawRedesigned(metrics, itemScale) {
@@ -124,6 +123,11 @@ function draw() {
     $("#ride-editor").hidden = !loadedRide;
     const noLaps = loadedRide && !usesRideMetrics() && !values();
     $("#no-laps-message").hidden = !noLaps;
+    if (noLaps) {
+      $("#no-laps-message h2").textContent = $("#laps").textContent
+        ? "Lap riding stats unavailable."
+        : "No High Park laps detected.";
+    }
     canvas.hidden = Boolean(noLaps);
     $(".preview-tag").hidden = Boolean(noLaps);
     if (!loadedRide) {
@@ -349,13 +353,13 @@ function showRide(ride) {
     distanceMeters: metric(ride?.distanceMeters),
     averageSpeedMps: metric(ride?.averageSpeedMps),
     normalizedPowerWatts: metric(ride?.normalizedPowerWatts),
-    elapsedSeconds: metric(ride?.elapsedSeconds)
+    movingSeconds: metric(ride?.movingSeconds)
   };
-  const [distance, speed, power, elapsed] = redesignedMetrics().map(([, value]) => value);
+  const [distance, speed, power, ridingTime] = redesignedMetrics().map(([, value]) => value);
   $("#ride-distance").textContent = distance;
   $("#ride-average-speed").textContent = speed;
   $("#ride-normalized-power").textContent = power;
-  $("#ride-elapsed-time").textContent = elapsed;
+  $("#ride-riding-time").textContent = ridingTime;
   loadedRide = Boolean(ride);
   if (!ride?.laps) {
     $("#laps").textContent = ""; $("#time").textContent = ""; $("#speed").textContent = "";
@@ -370,7 +374,7 @@ function showRide(ride) {
   const date = ride.date ? ` · ${new Date(ride.date).toLocaleDateString()}` : "";
   rideMessage(`${ride.title || "ride"}${date} · ${ride.laps} High Park lap${ride.laps === 1 ? "" : "s"}`);
 }
-const previewRide = { title: "example ride · High Park morning", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 }, distanceMeters: 42800, averageSpeedMps: 7.65, normalizedPowerWatts: 246, elapsedSeconds: 6138 };
+const previewRide = { title: "example ride · High Park morning", laps: 14, fastestLap: { time: "2:38", speedKmh: 42.3 }, distanceMeters: 42800, averageSpeedMps: 7.65, normalizedPowerWatts: 246, movingSeconds: 5595 };
 async function loadRide(id) {
   if (!id) { loadedRide = false; draw(); rideMessage("Choose a ride to make your overlay."); return; }
   if (designPreview) {

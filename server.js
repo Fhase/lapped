@@ -1357,14 +1357,14 @@ function takeOverlayRead(athleteId) {
 
 function overlayFastestLap(efforts) {
   const fastest = efforts
-    .filter((effort) => Number(effort.elapsed_time) > 0)
-    .sort((a, b) => Number(a.elapsed_time) - Number(b.elapsed_time))[0];
+    .filter((effort) => Number.isFinite(effort.moving_time) && effort.moving_time > 0)
+    .sort((a, b) => a.moving_time - b.moving_time)[0];
   if (!fastest) return null;
-  const elapsed = Math.round(Number(fastest.elapsed_time));
-  const speedMs = Number(fastest.average_speed) || Number(fastest.distance) / elapsed;
+  const seconds = Math.round(fastest.moving_time);
+  const speedMs = fastest.distance > 0 ? fastest.distance / fastest.moving_time : Number(fastest.average_speed);
   return {
-    time: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`,
-    speedKmh: Number.isFinite(speedMs) ? (speedMs * 3.6).toFixed(1) : null
+    time: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`,
+    speedKmh: Number.isFinite(speedMs) && speedMs > 0 ? (speedMs * 3.6).toFixed(1) : null
   };
 }
 
@@ -1418,7 +1418,7 @@ async function getOverlayRide(athleteId, activityId, token) {
     distanceMeters: Number.isFinite(activity.distance) ? activity.distance : null,
     averageSpeedMps: Number.isFinite(activity.average_speed) ? activity.average_speed : null,
     normalizedPowerWatts: Number.isFinite(activity.weighted_average_watts) ? activity.weighted_average_watts : null,
-    elapsedSeconds: Number.isFinite(activity.elapsed_time) ? activity.elapsed_time : null
+    movingSeconds: Number.isFinite(activity.moving_time) ? activity.moving_time : null
   };
   overlayRideDetailCache.set(key, { ride, checkedAt: Date.now() });
   return ride;
