@@ -34,7 +34,12 @@ test("only the lapped owner can pair and forward uploads", async (t) => {
   });
   assert.equal((await pair("456")).status, 403);
   assert.equal((await pair("123", "https://example.com")).status, 403);
+  const approvalPage = await fetch(base + "/connect?" + body, { headers: { "test-athlete": "123" } });
+  assert.equal(approvalPage.status, 200);
+  assert.equal(approvalPage.headers.get("referrer-policy"), "same-origin");
+  assert.equal((await pair("123", "null")).status, 403);
   const approval = await pair("123");
+  assert.equal(approval.headers.get("referrer-policy"), "no-referrer");
   assert.equal(approval.status, 303);
   const callback = new URL(approval.headers.get("location"));
   assert.equal(callback.origin, "http://127.0.0.1:12345");

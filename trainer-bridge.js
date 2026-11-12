@@ -26,17 +26,20 @@ export function mountTrainerBridge(app, { origin, secret, isOwner, tokenForAthle
   };
   router.get("/connect", (req, res) => {
     const fields = pairing(req.query);
-    if (!fields) return res.sendStatus(400);
+    if (!fields) return res.status(400).type("text").send("Start in Indoor Trainer: Settings → Connect with Strava.");
     if (!ownerSession(req)) return res.status(403).type("html").send(
       '<h1>Sign in to lapped.fit</h1><p>Open <a href="/" target="_blank" rel="noopener">lapped.fit</a> in this browser and sign in with the owner account. Then click Connect with Strava again in Indoor Trainer.</p>'
     );
+    // A no-referrer policy sends Origin: null on the browser form POST.
+    res.set("Referrer-Policy", "same-origin");
     res.set("Content-Security-Policy", "default-src 'none'; form-action 'self' http://127.0.0.1:*; frame-ancestors 'none'");
     const inputs = Object.entries(fields).map(([key, value]) => `<input type="hidden" name="${key}" value="${value}">`).join("");
     res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width"><title>Connect Indoor Trainer</title><h1>Connect Indoor Trainer</h1><p>Allow this Mac to upload rides to your Strava account through lapped.fit.</p><form method="post" action="${prefix}/connect">${inputs}<button>Connect with Strava</button></form>`);
   });
   router.post("/connect", (req, res) => {
     const athlete = ownerSession(req);
-    if (!athlete || req.get("origin") !== origin) return res.sendStatus(403);
+    if (!athlete) return res.status(403).type("text").send("Sign in to lapped.fit with the owner account, then reconnect from Indoor Trainer.");
+    if (req.get("origin") !== origin) return res.status(403).type("text").send("The browser could not verify this approval. Open a fresh Connect with Strava page from Indoor Trainer.");
     const fields = pairing(req.body);
     if (!fields) return res.sendStatus(400);
     const expires = Math.floor(Date.now() / 1000) + 30 * 86400;
