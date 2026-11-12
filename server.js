@@ -1,3 +1,4 @@
+import { mountTrainerBridge } from "./trainer-bridge.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -1647,6 +1648,15 @@ async function regenerateLappedReceiptWithToken(token, activityId, athleteId, ac
   // event and therefore must not change the personal totals.
   return { lapCount, changed: true, description, activityStart: activity.start_date };
 }
+
+mountTrainerBridge(app, {
+  origin: new URL(canonicalUrl).origin,
+  secret: process.env.SESSION_SECRET,
+  isOwner: (id) => process.env.ADMIN_ATHLETE_ID
+    ? id === process.env.ADMIN_ATHLETE_ID
+    : crypto.createHash("sha256").update(id).digest("hex") === defaultAdminAthleteHash,
+  tokenForAthlete
+});
 
 // Additive mobile routes use a separate session store and the same registered
 // HTTPS callback. They never change website cookies, encryption keys or grants.
