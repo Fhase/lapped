@@ -35,14 +35,14 @@
 
   main { position: relative; width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 26px; }
 
-  /* Workout profile: blocks rise in, then a ride cursor sweeps across once, lighting the whole workout, and fades out. */
+  /* Workout profile: blocks rise in, then a ride cursor sweeps across once (fast start, gentle finish), lighting the whole workout, and fades out. */
   .profile { position: relative; height: 64px; }
   .bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 3px; }
   .bars i { flex: var(--w); height: var(--h); background: var(--c); border-radius: 3px; transform-origin: bottom; animation: rise .7s var(--ease) both; animation-delay: calc(var(--i) * 45ms + 120ms); }
   .bars.dim i { opacity: .32; }
-  .bars.lit { clip-path: inset(0 100% 0 0); animation: ride 4s cubic-bezier(.45,0,.55,1) 1.1s forwards; }
+  .bars.lit { clip-path: inset(0 100% 0 0); animation: ride 3.2s cubic-bezier(.16,1,.3,1) 1.1s forwards; }
   .bars.lit i { animation: none; }
-  .cursor { position: absolute; top: -6px; bottom: 0; width: 1.5px; background: var(--ink); border-radius: 1px; left: 0; opacity: 0; animation: cursor 4s cubic-bezier(.45,0,.55,1) 1.1s forwards; box-shadow: 0 0 10px rgba(255,255,255,.5); }
+  .cursor { position: absolute; top: -6px; bottom: 0; width: 1.5px; background: var(--ink); border-radius: 1px; left: 0; opacity: 0; animation: cursor 3.2s cubic-bezier(.16,1,.3,1) 1.1s forwards; box-shadow: 0 0 10px rgba(255,255,255,.5); }
   @keyframes rise { from { transform: scaleY(0); opacity: 0; } }
   @keyframes ride { to { clip-path: inset(0 0 0 0); } }
   @keyframes cursor { 0% { left: 0; opacity: 0; } 5% { opacity: .9; } 92% { opacity: .9; } 100% { left: 100%; opacity: 0; } }
