@@ -32,8 +32,8 @@ svg.icon.fill { fill: currentColor; stroke: none; }
 
 /* Layout */
 #app { display: flex; height: 100vh; min-width: 900px; position: relative; }
-.sidebar { width: 180px; flex: none; background: var(--sidebar); padding: 46px 18px 18px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--border); }
-.sidebar .logo { height: 18px; margin-bottom: 30px; }
+.sidebar { width: 180px; flex: none; background: var(--sidebar); padding: 18px; display: flex; flex-direction: column; gap: 8px; border-right: 1px solid var(--border); }
+.sidebar .logo { display: none; }
 .nav { display: flex; align-items: center; gap: 10px; height: 37px; padding: 0 10px; border-radius: 6px; color: var(--muted); font-size: 13px; position: relative; transition: background .18s, color .18s; }
 .nav svg { width: 18px; font-size: 15px; }
 .nav.on { background: var(--panel); color: var(--ink); font-weight: 600; }
@@ -111,6 +111,9 @@ svg.icon.fill { fill: currentColor; stroke: none; }
 .ftp-link { display: flex; align-items: baseline; gap: 6px; }
 .ftp-link .k { font: 600 11px var(--font); color: var(--muted); }
 .ftp-link .v { font-size: 15px; }
+.start-note { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 12%, transparent); font: 400 13px var(--font); }
+.start-note span { flex: 1; min-width: 180px; }
+.start-note .key { min-height: 30px; }
 .ftp-link .set { font: 600 12px var(--font); color: var(--accent); }
 
 /* Chart */
@@ -318,3 +321,4 @@ svg.icon.fill { fill: currentColor; stroke: none; }
   .complete .actions { width: 100%; }
   .count { font-size: 110px; }
 }
+#start-note:empty { display: none; }

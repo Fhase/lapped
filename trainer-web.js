@@ -1,16 +1,15 @@
 import express from "express";
 
-export function mountTrainerAccessGuard(app, isAdmin) {
+// Every rider must be signed in with Strava (through lapped) to use the trainer.
+export function mountTrainerAccessGuard(app) {
   app.get("/trainer/connect", (req, res) => {
     const athleteId = req.session?.strava?.athlete?.id;
-    if (athleteId && !isAdmin(athleteId)) return res.sendStatus(403);
     if (athleteId) return res.redirect("/trainer/");
     req.session.returnTo = "/trainer/?connected=1";
     res.redirect("/auth/strava?consent=yes");
   });
   app.use("/trainer", (req, res, next) => {
     const athleteId = req.session?.strava?.athlete?.id;
-    if (athleteId && !isAdmin(athleteId)) return res.sendStatus(403);
     if (!athleteId) {
       if (req.method === "GET" && (req.path === "/" || req.path === "/index.html")) {
         return res.redirect("/trainer/connect?consent=yes");
@@ -21,7 +20,7 @@ export function mountTrainerAccessGuard(app, isAdmin) {
   });
   app.use("/api/trainer", (req, res, next) => {
     const athleteId = req.session?.strava?.athlete?.id;
-    if (!athleteId || !isAdmin(athleteId)) return res.sendStatus(403);
+    if (!athleteId) return res.sendStatus(401);
     next();
   });
 }
@@ -74,7 +73,7 @@ export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch,
       const access = await accessToken(req);
       const upstream = await fetchStrava(url, {
         ...options,
-        headers: { authorization: `Bearer ${access}` },
+        headers: { ...options.headers, authorization: `Bearer ${access}` },
         redirect: "error",
         signal: AbortSignal.timeout(20000)
       });
@@ -105,6 +104,14 @@ export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch,
   router.get("/uploads/:id", sameOriginWithAthlete, async (req, res) => {
     if (!/^\d{1,20}$/.test(req.params.id)) return res.sendStatus(400);
     await strava(req, res, `https://www.strava.com/api/v3/uploads/${req.params.id}`, { method: "GET" });
+  });
+
+  // Strava's API cannot set "Only You"; muting (hide_from_home) keeps the ride out of followers' feeds.
+  router.put("/activities/:id/mute", sameOriginWithAthlete, async (req, res) => {
+    if (!/^\d{1,20}$/.test(req.params.id)) return res.sendStatus(400);
+    await strava(req, res, `https://www.strava.com/api/v3/activities/${req.params.id}`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ hide_from_home: true })
+    });
   });
 
   app.use("/api/trainer", router);

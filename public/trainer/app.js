@@ -277,7 +277,8 @@ async function uploadToStrava(ride, samples) {
     if (upload.error) return fail("Strava upload failed. " + upload.error);
     if (!upload.activity_id) return fail("Strava is still processing the ride. Check Strava before retrying.");
     strava.lastActivity = upload.activity_id;
-    fail("Uploaded to Strava.");
+    const muted = await fetch(`/api/trainer/activities/${upload.activity_id}/mute`, { method: "PUT", credentials: "same-origin" }).then((r) => r.ok, () => false);
+    fail(muted ? "Uploaded to Strava, hidden from feeds." : "Uploaded to Strava. Could not hide it from feeds.");
   } catch (error) { fail("Strava upload failed. " + error.message); }
 }
 
@@ -346,14 +347,14 @@ function sessionHtml() {
     ? `<button class="key" data-act="request-erg">${ui.requestedErg ? `<span style="color:var(--accent)">${icon("bolt", "fill")}</span>ERG On` : `<span class="muted">${icon("boltOff")}</span>ERG Off`}</button>` : "";
   const action = model.ride
     ? `<button class="key prominent" data-nav="ride">${icon("play", "fill")}Return to Ride</button>`
-    : `<button class="key prominent" data-act="start" ${w.id !== "free" && ftp == null ? "disabled" : ""}>${icon("play", "fill")}Start Session</button>`;
+    : `<button class="key prominent" data-act="start">${icon("play", "fill")}Start Session</button>`;
   return `<div class="session"><div><div class="name"><h2>${esc(w.name)}</h2><button class="fav ${fav ? "on" : ""}" data-act="favorite" aria-label="${fav ? "Remove from saved" : "Save session"}">${icon("star", fav ? "fill" : "")}</button></div>
       <div class="meta">${w.id === "free" ? "Open duration" : `${esc(w.category)}  ·  ${w.minutes} min`}</div>${w.id !== "free" ? `<div class="summary">${esc(w.summary)}</div>` : ""}</div>
     ${w.id === "free" ? `<div class="summary" style="min-height:160px">${esc(w.summary)}</div>` : `<div style="height:200px" data-chart-session></div>
       <div style="display:flex;flex-direction:column;gap:6px">${label("Main set")}<div class="structure">${esc(w.structure)}</div></div>
       <div class="stats">${stat("Duration", w.minutes, "min")}${stat("Max target", ftp ? peakTarget(w.steps, ftp) : null, "W")}${stat("Est. TSS", trainingStress(w.steps), "")}${stat("Avg target", ftp ? averageTarget(w.steps, ftp) : null, "W")}</div>`}
     <div class="divider"></div>
-    <div class="foot">${w.id !== "free" ? `<button class="ftp-link" data-act="edit-ftp" title="Edit FTP in Settings"><span class="k">FTP</span>${ftp ? `<span class="v num">${ftp} W</span>` : '<span class="set">Set in Settings</span>'}</button>` : ""}<span class="spacer"></span>${ergButton}${action}</div></div>`;
+    <div class="foot">${w.id !== "free" ? `<button class="ftp-link" data-act="edit-ftp" title="Edit FTP in Settings"><span class="k">FTP</span>${ftp ? `<span class="v num">${ftp} W</span>` : '<span class="set">Set in Settings</span>'}</button>` : ""}<span class="spacer"></span>${ergButton}${action}</div><div id="start-note"></div></div>`;
 }
 
 // Ride
@@ -485,7 +486,7 @@ function settingsHtml() {
   const sections = [["rider", "Rider"], ["devices", "Devices"], ["strava", "Strava"]];
   const theme = prefs.get("appearance", "Dark");
   return `<h1 class="heading">Settings</h1><div class="settings"><div class="index">${sections.map(([id, name]) => `<button class="${ui.settingsSection === id ? "on" : ""}" data-section="${id}">${name}</button>`).join("")}
-    <div class="theme">${["Dark", "Light"].map((t) => `<button class="${theme === t ? "on" : ""}" data-theme="${t}" aria-label="${t} appearance">${t}</button>`).join("")}</div></div>
+    <div class="theme">${["Dark", "Light"].map((t) => `<button class="${theme.toLowerCase() === t.toLowerCase() ? "on" : ""}" data-appearance="${t}" aria-label="${t} appearance">${t}</button>`).join("")}</div></div>
     <div class="section" id="section">${sectionHtml()}</div></div>`;
 }
 
@@ -512,7 +513,7 @@ function stravaHtml() {
   const name = strava.athlete ? `${strava.athlete.firstname} ${strava.athlete.lastname}`.trim() : "";
   return `<div class="panel"><div style="display:flex;align-items:center">${label("Strava")}<span style="flex:1"></span>${strava.busy ? '<span class="caption">Working…</span>' : ""}</div>
     ${strava.connected
-      ? `<div style="display:flex;align-items:center"><span style="font:500 14px var(--font)">Connected to Strava${name ? ` as ${esc(name)}` : ""}</span><span style="flex:1"></span><a class="key" href="/me" style="text-decoration:none">Manage on lapped.fit</a></div>
+      ? `<div style="display:flex;align-items:center"><span style="font:500 14px var(--font)">Connected to Strava${name ? ` as ${esc(name)}` : ""}</span><span style="flex:1"></span><a class="key" href="/" style="text-decoration:none">Manage on lapped.fit</a></div>
          <label class="check"><input type="checkbox" data-act="auto-upload" ${prefs.get("stravaAutoUpload", false) ? "checked" : ""}>Auto-upload finished rides</label>`
       : `<span class="muted" style="font:400 13px var(--font)">Rides upload through your lapped.fit Strava connection. By connecting you accept lapped's <a href="/terms.html">terms</a> and <a href="/privacy.html">privacy policy</a>.</span>
          <div><a class="key prominent" href="/trainer/connect?consent=yes" style="text-decoration:none">Connect with Strava</a></div>`}
@@ -657,14 +658,14 @@ function download(name, text) {
 
 // ---------- Events ----------
 app.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-nav],[data-act],[data-workout],[data-ride],[data-section],[data-theme],[data-pair],[data-forget]");
+  const target = event.target.closest("[data-nav],[data-act],[data-workout],[data-ride],[data-section],[data-appearance],[data-pair],[data-forget]");
   if (!target) return;
   const d = target.dataset;
   if (d.nav) return navigate(d.nav);
   if (d.workout) return selectWorkout(workouts.find((w) => w.id === d.workout));
   if (d.ride) { await loadRide(model.history.find((r) => r.id === d.ride)); return render(); }
   if (d.section) { ui.settingsSection = d.section; return render(); }
-  if (d.theme) { prefs.set("appearance", d.theme); applyTheme(); return render(); }
+  if (d.appearance) { prefs.set("appearance", d.appearance); applyTheme(); return render(); }
   if (d.pair) { try { await devices.pair(d.pair); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } return renderSection(); }
   if (d.forget) { devices.forget(d.forget); return renderSection(); }
   switch (d.act) {
@@ -677,7 +678,19 @@ app.addEventListener("click", async (event) => {
     }
     case "edit-ftp": ui.settingsSection = "rider"; return navigate("settings");
     case "request-erg": ui.requestedErg = !ui.requestedErg; return selectWorkout(ui.workout);
-    case "start": return startRide(ui.workout);
+    case "start": {
+      // Before starting, the rider needs an FTP (for targets) and a power source (the countdown waits for power).
+      const needFtp = ui.workout.id !== "free" && !profile.ftp;
+      const needDevice = !devices.links.trainer && !devices.links.power;
+      if (!needFtp && !needDevice) return startRide(ui.workout);
+      const note = document.getElementById("start-note");
+      note.className = "start-note";
+      note.innerHTML = `<span>${needFtp && needDevice ? "Set your FTP and pair a trainer or power meter first." : needFtp ? "Set your FTP first so targets are in watts." : "Pair a trainer or power meter first."}</span>`
+        + (needFtp ? '<button class="key" data-act="edit-ftp">Set FTP</button>' : "")
+        + (needDevice ? `<button class="key" data-act="devices">${icon("radio")}Pair device</button>` : "");
+      note.animate?.([{ opacity: 0, transform: "translateY(-4px)" }, { opacity: 1, transform: "none" }], { duration: reduceMotion() ? 0 : 180, easing: "ease-out" });
+      return;
+    }
     case "toggle-run": return model.running ? pauseRide() : resumeRide();
     case "end": ui.endStage = "choose"; refreshOverlay(); return refreshDialog();
     case "keep": ui.endStage = null; refreshDialog(); overlayKey = null; return live();
@@ -751,7 +764,7 @@ document.addEventListener("keydown", (event) => {
 addEventListener("beforeunload", (event) => { if (model.running) event.preventDefault(); });
 addEventListener("resize", () => { const c = document.querySelector("[data-chart-ride]"); if (c) c.style.height = `${chartHeight()}px`; });
 
-function applyTheme() { document.documentElement.dataset.theme = prefs.get("appearance", "Dark") === "Light" ? "light" : "dark"; }
+function applyTheme() { document.documentElement.dataset.theme = prefs.get("appearance", "Dark").toLowerCase() === "light" ? "light" : "dark"; }
 
 // ---------- Start ----------
 (async function boot() {

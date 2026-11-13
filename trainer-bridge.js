@@ -83,5 +83,19 @@ export function mountTrainerBridge(app, { origin, secret, isOwner, tokenForAthle
   }
   router.post("/uploads", authenticate, express.raw({ type: "multipart/form-data", limit: "25mb" }), upload);
   router.get("/uploads/:id", authenticate, upload);
+  // Strava's API cannot set "Only You"; muting (hide_from_home) keeps the ride out of followers' feeds.
+  router.put("/activities/:id/mute", authenticate, async (req, res) => {
+    if (!/^\d{1,20}$/.test(req.params.id)) return res.sendStatus(400);
+    try {
+      const access = await tokenForAthlete(req.trainerAthlete);
+      const upstream = await fetchStrava(`https://www.strava.com/api/v3/activities/${req.params.id}`, {
+        method: "PUT", headers: { authorization: `Bearer ${access}`, "content-type": "application/json" },
+        body: JSON.stringify({ hide_from_home: true }), redirect: "error", signal: AbortSignal.timeout(20000)
+      });
+      res.status(upstream.status).type("json").send(await upstream.text());
+    } catch {
+      res.status(502).json({ message: "Lapped could not reach Strava." });
+    }
+  });
   app.use(prefix, router);
 }

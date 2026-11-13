@@ -52,6 +52,14 @@ test("browser trainer uploads with the rider's own session and checks the origin
   assert.equal(forwarded[1].url, "https://www.strava.com/api/v3/uploads/7");
   assert.equal((await fetch(`${base}/uploads/x7`, { headers: { "test-athlete": "5" } })).status, 400);
 
+  const mute = await fetch(`${base}/activities/99/mute`, { method: "PUT", headers: { origin: "https://lapped.fit", "test-athlete": "5" } });
+  assert.equal(mute.status, 200);
+  assert.equal(forwarded[2].url, "https://www.strava.com/api/v3/activities/99");
+  assert.equal(forwarded[2].options.method, "PUT");
+  assert.deepEqual(JSON.parse(forwarded[2].options.body), { hide_from_home: true });
+  assert.equal(forwarded[2].options.headers["content-type"], "application/json");
+  assert.equal((await fetch(`${base}/activities/99/mute`, { method: "PUT", headers: { origin: "https://evil.example", "test-athlete": "5" } })).status, 403);
+
 });
 
 test("trainer workouts, stats and sensor parsing match the Mac app", () => {

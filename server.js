@@ -159,7 +159,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-mountTrainerAccessGuard(app, isAdminAthlete);
+mountTrainerAccessGuard(app);
 function cookieValue(req, name) {
   return req.headers.cookie?.split(";").map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
