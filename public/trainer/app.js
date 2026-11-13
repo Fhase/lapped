@@ -317,8 +317,8 @@ async function loadStrava() {
 
 async function uploadToStrava(ride, samples) {
   if (strava.busy) return;
-  strava.busy = true; strava.status = "Uploading to Strava…"; render();
-  const fail = (message) => { strava.status = message; strava.busy = false; render(); };
+  strava.busy = true; strava.status = "Uploading to Strava…"; stravaChanged();
+  const fail = (message) => { strava.status = message; strava.busy = false; stravaChanged(); };
   try {
     const query = new URLSearchParams({ name: ride.name, description: rideSummary(ride, samples), external_id: `indoortrainer-${ride.id}` });
     const response = await fetch(`/api/trainer/uploads?${query}`, {
@@ -327,7 +327,7 @@ async function uploadToStrava(ride, samples) {
     let upload = await response.json().catch(() => ({}));
     if (response.status === 401) { strava.connected = false; return fail("Connect with Strava again in Settings."); }
     if (!response.ok) return fail("Strava upload failed. " + (upload.message || upload.error || `Error ${response.status}`));
-    strava.status = "Strava is processing the ride…"; render();
+    strava.status = "Strava is processing the ride…"; stravaChanged();
     for (let attempt = 0; attempt < 30 && !upload.activity_id && !upload.error; attempt++) {
       await new Promise((r) => setTimeout(r, 2000));
       const poll = await fetch(`/api/trainer/uploads/${upload.id}`, { credentials: "same-origin" });
@@ -337,9 +337,18 @@ async function uploadToStrava(ride, samples) {
     if (upload.error) return fail("Strava upload failed. " + upload.error);
     if (!upload.activity_id) return fail("Strava is still processing the ride. Check Strava before retrying.");
     strava.lastActivity = upload.activity_id;
-    const muted = await fetch(`/api/trainer/activities/${upload.activity_id}/mute`, { method: "PUT", credentials: "same-origin" }).then((r) => r.ok, () => false);
-    fail(muted ? "Uploaded to Strava, hidden from feeds." : "Uploaded to Strava. Could not hide it from feeds.");
+    await fetch(`/api/trainer/activities/${upload.activity_id}/mute`, { method: "PUT", credentials: "same-origin" }).catch(() => {});
+    fail("Uploaded to Strava.");
   } catch (error) { fail("Strava upload failed. " + error.message); }
+}
+
+/** Updates only the upload status and buttons, so the page and dialog don't rebuild (no flash, no replayed animation). */
+function stravaChanged() {
+  const area = document.querySelector("[data-strava-area]");
+  if (area) area.innerHTML = completeStravaHtml();
+  for (const button of document.querySelectorAll('[data-act="upload"]')) button.disabled = strava.busy;
+  for (const caption of document.querySelectorAll("[data-strava-status]")) caption.textContent = strava.status ?? "";
+  if (ui.page === "settings" && ui.settingsSection === "strava") renderSection();
 }
 
 // ---------- Rendering ----------
@@ -529,7 +538,7 @@ function detailsHtml(ride) {
       <button class="key" data-act="export">${icon("down")}Export TCX</button>
       <button class="delete" data-act="delete-saved">${icon("trash")}Delete ride</button></div>
     <div style="display:flex;gap:16px">${toggleHtml("Power", "var(--ink)", ui.showPower, "power")}${toggleHtml("Heart rate", "var(--heart)", ui.showHeart, "heart")}</div>
-    ${strava.status ? `<span class="caption">${esc(strava.status)}</span>` : ""}
+    <span class="caption" data-strava-status>${esc(strava.status ?? "")}</span>
     <div style="height:170px" data-chart-history></div></div>
     <div class="metrics">${metric("Duration", clockText(ride.elapsed), "")}${metric("Avg power", ride.avgPower, "W", "var(--power)")}${metric("Avg heart rate", ride.avgHeart, "bpm")}</div>
     <div class="metrics">${metric("Est. distance", stats.distanceKm != null ? decimal(stats.distanceKm, 2) : null, "km")}${metric("Est. avg speed", stats.speed != null ? decimal(stats.speed, 1) : null, "km/h")}${metric("Elevation gain", "0", "m")}</div>
@@ -575,8 +584,10 @@ function devicesHtml() {
   if (!devices.supported) return `<div class="home-head"><span style="font:700 22px var(--font)">Devices</span></div><div class="panel"><strong>This browser can't use Bluetooth.</strong><span class="muted">Open lapped.fit/trainer in Chrome or Edge on a Mac, Windows PC, Chromebook or Android device to connect a trainer, power meter or heart-rate strap. Safari and iPhone don't support Web Bluetooth.</span></div>`;
   return `<div class="home-head"><span style="font:700 22px var(--font)">Devices</span></div><div class="panel">${label("Paired roles")}${roles.map((role) => {
     const link = devices.links[role.id];
-    return `<div class="device-row"><span class="role">${role.name}</span><span class="dn">${esc(devices.name(role.id))}</span>${link ? `<span class="st ${link.state === "live" ? "live" : ""}">${devices.label(role.id)}</span><button class="key" data-forget="${role.id}">Forget</button>` : `<button class="key" data-pair="${role.id}">Pair</button>`}</div>`;
-  }).join("")}<div class="device-row"><span class="role">Simulator</span><span class="dn">Trainer Simulator on this Mac</span><button class="key" data-act="simulator">Connect</button></div></div><span class="caption">Pair opens your browser's Bluetooth list. Wake the sensor first (pedal, or wear the strap). A trainer that supports FTMS can hold ERG targets. Pairings last until you close this tab. To test without hardware, open Trainer Simulator on this Mac and press Connect; Chrome may ask to allow local network access.</span>`;
+    // Trainer Simulator on this Mac can't appear in the browser's Bluetooth list, so Pair offers it alongside.
+    const choosing = ui.pairChoice === role.id && !link;
+    return `<div class="device-row"><span class="role">${role.name}</span><span class="dn">${esc(devices.name(role.id))}</span>${link ? `<span class="st ${link.state === "live" ? "live" : ""}">${devices.label(role.id)}</span><button class="key" data-forget="${role.id}">Forget</button>` : choosing ? `<button class="key" data-pair-sim="${role.id}">Trainer Sim · This Mac</button><button class="key" data-pair-bt="${role.id}">Bluetooth device…</button>` : `<button class="key" data-pair="${role.id}">Pair</button>`}</div>`;
+  }).join("")}</div><span class="caption">Pair opens your browser's Bluetooth list. Wake the sensor first (pedal, or wear the strap). A trainer that supports FTMS can hold ERG targets. Pairings last until you close this tab.</span>`;
 }
 
 function stravaHtml() {
@@ -612,14 +623,17 @@ const confirmHtml = (yes, no) => `<div class="modal"><div class="dialog"><h3>Del
 function completeHtml() {
   const { ride, stats } = ui.finished, ftp = profile.ftp;
   const s = (n, v, u) => stat(n, v, u);
-  const auto = prefs.get("stravaAutoUpload", false);
-  const status = strava.status ?? (strava.connected && auto ? "Uploading to Strava…" : null);
-  const failed = strava.status?.startsWith("Strava upload failed");
   return `<div class="modal"><div class="dialog complete"><div style="display:flex;flex-direction:column;gap:4px">${label("Ride complete", "var(--accent)")}<h3 style="font-size:26px">${esc(ride.name)}</h3>${stats.completion != null ? `<span class="num muted" style="font-size:15px">${stats.completion}% completed</span>` : ""}</div>
     <div class="grid3">${s("Time", clockText(ride.elapsed), "")}${s("Distance", stats.distanceKm != null ? decimal(stats.distanceKm, 1) : null, "km")}${s("TSS", stats.stress, "")}${s("Avg power", stats.averagePower, "W")}${s("NP", stats.normalizedPower, "W")}${s("Max power", stats.maxPower, "W")}${s("Avg HR", stats.averageHeart, "bpm")}${s("Max HR", stats.maxHeart, "bpm")}${s("Energy", stats.kilojoules, "kJ")}</div>
     ${stats.ftpEstimate != null ? `<div class="estimate"><div style="display:flex;flex-direction:column;gap:2px">${label("Estimated FTP")}<div style="display:flex;align-items:baseline;gap:6px"><span class="num" style="font-size:30px">${stats.ftpEstimate}</span><span class="muted" style="font:400 12px var(--font)">${ftp ? `W · current ${ftp} W` : "W"}</span></div></div><span style="flex:1"></span><button class="key ${ftp !== stats.ftpEstimate ? "prominent" : ""}" data-act="set-ftp" ${ftp === stats.ftpEstimate || stats.ftpEstimate < 1 || stats.ftpEstimate > 1000 ? "disabled" : ""}>${ftp === stats.ftpEstimate ? "FTP Updated" : "Set FTP"}</button></div>` : ""}
-    <div class="divider"></div>${status ? `<div class="status">${esc(status)}</div>` : ""}
-    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : (!auto || failed ? `<button class="key" data-act="upload-finished" ${strava.busy ? "disabled" : ""}>${icon("up")}Upload to Strava</button>` : "")}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div></div></div>`;
+    <div class="divider"></div><div data-strava-area style="display:contents">${completeStravaHtml()}</div></div></div>`;
+}
+function completeStravaHtml() {
+  const auto = prefs.get("stravaAutoUpload", false);
+  const status = strava.status ?? (strava.connected && auto ? "Uploading to Strava…" : null);
+  const failed = strava.status?.startsWith("Strava upload failed");
+  return `${status ? `<div class="status">${esc(status)}</div>` : ""}
+    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : (!auto || failed ? `<button class="key" data-act="upload-finished" ${strava.busy ? "disabled" : ""}>${icon("up")}Upload to Strava</button>` : "")}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
 }
 function refreshDialog() { const d = document.getElementById("dialog"); if (d) d.innerHTML = dialogHtml(); }
 
@@ -728,7 +742,7 @@ function download(name, text) {
 
 // ---------- Events ----------
 app.addEventListener("click", async (event) => {
-  const target = event.target.closest("[data-nav],[data-act],[data-workout],[data-ride],[data-section],[data-appearance],[data-pair],[data-forget]");
+  const target = event.target.closest("[data-nav],[data-act],[data-workout],[data-ride],[data-section],[data-appearance],[data-pair],[data-pair-sim],[data-pair-bt],[data-forget]");
   if (!target) return;
   const d = target.dataset;
   if (d.nav) return navigate(d.nav);
@@ -736,12 +750,16 @@ app.addEventListener("click", async (event) => {
   if (d.ride) { await loadRide(model.history.find((r) => r.id === d.ride)); return render(); }
   if (d.section) { ui.settingsSection = d.section; return render(); }
   if (d.appearance) { prefs.set("appearance", d.appearance); applyTheme(); return render(); }
-  if (d.pair) { try { await devices.pair(d.pair); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } return renderSection(); }
+  const bluetooth = async (role) => { try { await devices.pair(role); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } };
+  if (d.pair) {
+    // Checked within Chrome's click window, so the Bluetooth list still opens when the simulator isn't running.
+    if (await devices.simulatorAvailable()) { ui.pairChoice = d.pair; return renderSection(); }
+    await bluetooth(d.pair); return renderSection();
+  }
+  if (d.pairSim) { ui.pairChoice = null; try { await devices.connectSimulator(d.pairSim); } catch (error) { showError("Could not connect. " + error.message); } return renderSection(); }
+  if (d.pairBt) { ui.pairChoice = null; await bluetooth(d.pairBt); return renderSection(); }
   if (d.forget) { devices.forget(d.forget); return renderSection(); }
   switch (d.act) {
-    case "simulator":
-      try { await devices.connectSimulator("trainer"); await devices.connectSimulator("heart"); } catch (error) { showError(error.message); }
-      return renderSection();
     case "tab": ui.favoritesOnly = d.tab === "Saved"; return render();
     case "favorite": {
       const favs = favorites();

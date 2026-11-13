@@ -322,3 +322,5 @@ svg.icon.fill { fill: currentColor; stroke: none; }
   .count { font-size: 110px; }
 }
 #start-note:empty { display: none; }
+
+[data-strava-status]:empty { display: none; }

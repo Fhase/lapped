@@ -151,7 +151,7 @@ test("website connects to Trainer Simulator over its local WebSocket and runs ER
     assert.deepEqual(sockets[0].sent, [[0xd9, 0x2a, 1, 0x00], [0xd9, 0x2a, 1, 0x07], [0xd9, 0x2a, 3, 0x05, 240, 0]]);
     devices.forget("trainer");
     assert.ok(sockets[0].closed);
-    assert.equal(devices.links.heart.name, "Trainer Simulator");
+    assert.equal(devices.links.heart.name, "Trainer Sim · This Mac");
   } finally { delete globalThis.WebSocket; }
 });
 

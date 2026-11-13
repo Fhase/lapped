@@ -133,11 +133,23 @@ export class Devices {
    * serves the same GATT payloads over a WebSocket on 127.0.0.1:47827. The trainer link keeps the FTMS
    * control path, so ERG runs exactly as with a real trainer; the heart link reads its strap.
    */
+  /** True when Trainer Simulator is running on this Mac (quick local check, no Bluetooth). */
+  simulatorAvailable(url = "ws://127.0.0.1:47827") {
+    return new Promise((resolve) => {
+      let socket;
+      const finish = (found) => { clearTimeout(timer); try { socket?.close(); } catch {} resolve(found); };
+      const timer = setTimeout(() => finish(false), 600);
+      try { socket = new WebSocket(url); } catch { return finish(false); }
+      socket.onopen = () => finish(true);
+      socket.onerror = () => finish(false);
+    });
+  }
+
   connectSimulator(role, url = "ws://127.0.0.1:47827") {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
-      const link = { name: "Trainer Simulator", state: "connecting", reading: {}, time: 0, socket };
+      const link = { name: "Trainer Sim · This Mac", state: "connecting", reading: {}, time: 0, socket };
       if (role === "trainer") {
         link.owns = false; link.started = false; link.queue = Promise.resolve();
         link.control = { writeValueWithResponse: async (bytes) => socket.send(Uint8Array.of(0xd9, 0x2a, bytes.length, ...bytes)) };
@@ -163,6 +175,7 @@ export class Devices {
           at += 3 + length;
           if (role === "trainer" && uuid === 0x2ad2) this.receive(role, link, parseIndoorBike(payload));
           else if (role === "trainer" && uuid === 0x2ad9 && length >= 3 && payload.getUint8(0) === 0x80) link.answer?.(payload.getUint8(1), payload.getUint8(2));
+          else if (role === "power" && uuid === 0x2a63) this.receive(role, link, parseCyclingPower(payload));
           else if (role === "heart" && uuid === 0x2a37) this.receive(role, link, parseHeartRate(payload));
         }
       };
