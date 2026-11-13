@@ -83,8 +83,17 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 h1 { font-size: clamp(56px, 8.7vw, 108px); }
 .route-card { background: transparent; border: 1px solid var(--line); }
 .route-card::after { display: none; }
-/* No staggered fade-up on load: it read as a glitch next to the font arriving */
-.copy, .route-card, .connect-card, .notes { animation: none; }
+/* Load: the intro rises in at once; everything that depends on being signed in waits (html.pending)
+   until /api/status has set the right layout, then rises in, so nobody sees the signed-out page first. */
+.connect-card, .notes { animation: none; }
+.lap-stats-values strong { transition: color .5s ease; }
+.copy, .route-card { animation: rise .7s cubic-bezier(.2,.8,.2,1) both; }
+.route-card { animation-delay: .08s; }
+#lap-link, .connect-card, .notes, .request-card, .site-footer { transition: opacity .6s cubic-bezier(.2,.8,.2,1), transform .6s cubic-bezier(.2,.8,.2,1); }
+.connect-card { transition-delay: .05s; } .notes { transition-delay: .12s; } .request-card { transition-delay: .18s; } .site-footer { transition-delay: .22s; }
+.pending #lap-link, .pending .connect-card, .pending .notes, .pending .request-card, .pending .site-footer { opacity: 0; transform: translateY(10px); transition: none; }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .copy, .route-card { animation: none; } #lap-link, .connect-card, .notes, .request-card, .site-footer { transition: none; } }
 .route-card:hover { transform: none; }
 .rider { fill: var(--ink); }
 .start { fill: var(--paper); stroke: var(--ink); }

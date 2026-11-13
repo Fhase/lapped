@@ -94,7 +94,8 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     fastestSpeed.textContent = stats.fastestLap ? (String(stats.fastestLap).split(" · ")[1] || "—") : "—";
     lapStatsStatus.textContent = "Updated from your private Strava segment history.";
   }).catch(() => { [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading")); connectedOverview.classList.remove("stats-loading"); lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
-}).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); });
+}).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); })
+  .finally(() => document.documentElement.classList.remove("pending")); // reveal once signed-in or signed-out layout is set
 disconnect.onclick = async () => {
   disconnect.disabled = true;
   try { await fetch("/auth/disconnect", { method: "POST" }); } finally { location.reload(); }
