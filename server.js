@@ -1,4 +1,5 @@
 import { mountTrainerBridge } from "./trainer-bridge.js";
+import { mountTrainerWeb } from "./trainer-web.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -1657,6 +1658,9 @@ mountTrainerBridge(app, {
     : crypto.createHash("sha256").update(id).digest("hex") === defaultAdminAthleteHash,
   tokenForAthlete
 });
+
+// Browser trainer at /trainer: uploads with the rider's own lapped Strava session.
+mountTrainerWeb(app, { origin: new URL(canonicalUrl).origin, accessToken });
 
 // Additive mobile routes use a separate session store and the same registered
 // HTTPS callback. They never change website cookies, encryption keys or grants.
