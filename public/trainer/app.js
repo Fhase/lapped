@@ -371,19 +371,32 @@ let charts = [];
 let rideView = null;
 const keepCharts = (list) => { charts.forEach((c) => c.destroy()); charts = list; };
 
-function navigate(page) {
-  if (page === "history" && !ui.selectedRide && model.history[0]) { loadRide(model.history[0]).then(render); }
-  ui.page = page;
-  render();
-  document.querySelector(".main")?.scrollTo(0, 0);
+// Page changes and the theme switch animate with View Transitions where the browser has them.
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+function transition(update) {
+  if (!document.startViewTransition || calm() || document.visibilityState !== "visible") return update();
+  const view = document.startViewTransition(update);
+  // A quick second click skips the first transition; that's expected, not an error.
+  for (const step of [view.ready, view.finished, view.updateCallbackDone]) step.catch(() => {});
+  return view;
 }
 
+function navigate(page) {
+  if (page === "history" && !ui.selectedRide && model.history[0]) { loadRide(model.history[0]).then(render); }
+  const changing = page !== ui.page;
+  const update = () => { ui.page = page; render(); document.querySelector(".main")?.scrollTo(0, 0); };
+  changing ? transition(update) : update();
+}
+
+let lastPage = null;
 function render() {
   const onRide = ui.page === "ride" && model.ride;
   const sidebar = onRide ? "" : sidebarHtml();
   rideView = null;
   keepCharts([]);
-  app.innerHTML = `${zoneGlowHtml()}${sidebar}<main class="main"><div class="page">${noticesHtml()}${pageHtml()}</div></main>${onRide ? `<button class="key pip" data-act="mini" title="Mini player (⇧⌘M)" aria-label="Open mini player">${icon("pip")}</button>` : ""}<div id="overlay"></div><div id="dialog">${dialogHtml()}</div>`;
+  // The page fades in only when it changes; re-renders on the same page (star, tabs) stay still.
+  const entering = ui.page !== lastPage; lastPage = ui.page;
+  app.innerHTML = `${zoneGlowHtml()}${sidebar}<main class="main"><div class="page${entering ? " enter" : ""}">${noticesHtml()}${pageHtml()}</div></main>${onRide ? `<button class="key pip" data-act="mini" title="Mini player (⇧⌘M)" aria-label="Open mini player">${icon("pip")}</button>` : ""}<div id="overlay"></div><div id="dialog">${dialogHtml()}</div>`;
   mountCharts();
   overlayKey = null;
   live();
@@ -751,6 +764,7 @@ function selectWorkout(workout) {
   document.querySelectorAll(".row").forEach((row) => row.classList.toggle("on", row.dataset.workout === workout.id));
   charts = charts.filter((c) => { if (c.host.matches("[data-chart-session]")) { c.destroy(); return false; } return true; });
   document.getElementById("session").innerHTML = sessionHtml();
+  document.querySelector("#session .session")?.classList.add("enter"); // fade only when a workout is picked
   const host = document.querySelector("[data-chart-session]");
   if (host) charts.push(new Chart(host, { steps: workout.steps, ftp: profile.ftp ?? 0 }));
   // On phones the session panel sits above the list.
@@ -775,7 +789,14 @@ app.addEventListener("click", async (event) => {
   if (d.workout) return selectWorkout(workouts.find((w) => w.id === d.workout));
   if (d.ride) { await loadRide(model.history.find((r) => r.id === d.ride)); return render(); }
   if (d.section) { ui.settingsSection = d.section; return render(); }
-  if (d.appearance) { prefs.set("appearance", d.appearance); applyTheme(); return render(); }
+  if (d.appearance) {
+    const root = document.documentElement;
+    root.classList.add("theme-flip"); // plain quick fade
+    const done = transition(() => { prefs.set("appearance", d.appearance); applyTheme(); render(); });
+    const clear = () => root.classList.remove("theme-flip");
+    (done?.finished ?? Promise.resolve()).then(clear, clear);
+    return;
+  }
   const bluetooth = async (role) => { try { await devices.pair(role); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } };
   if (d.pair) {
     // Checked within Chrome's click window, so the Bluetooth list still opens when the simulator isn't running.

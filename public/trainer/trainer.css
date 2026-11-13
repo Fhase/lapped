@@ -325,3 +325,73 @@ svg.icon.fill { fill: currentColor; stroke: none; }
 #start-note:empty { display: none; }
 
 [data-strava-status]:empty { display: none; }
+
+/* ---------- Motion and finish ----------
+   Small, quiet touches on top of the existing UI: no layout changes. Everything below
+   switches off under prefers-reduced-motion (the global rule above, plus the guards here). */
+:root { --spring: cubic-bezier(.2, .9, .25, 1); --soft: cubic-bezier(.4, 0, .2, 1); }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.main { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--ink) 18%, transparent) transparent; }
+.heading, .session h2, .dialog h3 { text-wrap: balance; }
+p, .caption { text-wrap: pretty; }
+input[type="checkbox"] { accent-color: var(--accent); }
+
+/* Buttons: a soft lift on hover, a springy press, a light sweep across the main action. */
+.key, .delete, .seg, .nav, .row, .tabs button, .theme button { -webkit-tap-highlight-color: transparent; }
+.key { transition: transform .22s var(--spring), background .18s var(--soft), border-color .18s var(--soft), box-shadow .25s var(--soft), opacity .15s; }
+.key:hover:not(:disabled) { background: color-mix(in srgb, var(--panel), var(--ink) 6%); border-color: color-mix(in srgb, var(--ink) 16%, transparent); }
+.key:active:not(:disabled) { opacity: 1; transform: scale(.965); transition-duration: .08s; }
+.key.prominent:hover:not(:disabled) { background: color-mix(in srgb, var(--accent), #fff 8%); border-color: rgba(0,0,0,.12); box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--accent) 80%, transparent); }
+/* Only the main action needs its own box for the sweep; plain keys keep their position (the mini-player key is fixed). */
+.key.prominent { position: relative; overflow: hidden; }
+.key.prominent::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.38) 50%, transparent 65%); transform: translateX(-120%); pointer-events: none; }
+.key.prominent:hover:not(:disabled)::after { transform: translateX(120%); transition: transform .7s var(--soft); }
+.key svg { transition: transform .22s var(--spring); }
+.key:hover:not(:disabled) svg { transform: translateY(-1px); }
+.delete:active:not(:disabled) { transform: scale(.965); }
+:is(button, a, input, [tabindex]):focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: 2px; }
+
+/* Sidebar: hover tint, the active bar grows in, icons nudge. */
+.nav:hover:not(.on) { background: color-mix(in srgb, var(--panel) 60%, transparent); color: var(--ink); }
+.nav:active { transform: scale(.98); }
+.nav { transition: background .18s, color .18s, transform .18s var(--spring); }
+.nav svg { transition: transform .25s var(--spring); }
+.nav:hover svg { transform: translateX(1px); }
+
+/* Workout list: rows press in, the selected one carries a soft accent halo. */
+.row { transition: background .16s, border-color .16s, transform .2s var(--spring), box-shadow .25s var(--soft); }
+.row:active { transform: scale(.985); }
+.row.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.row .profile { transition: opacity .2s, transform .25s var(--spring); opacity: .85; }
+.row:hover .profile, .row.on .profile { opacity: 1; transform: translateY(-1px); }
+
+/* Fields: a quiet focus halo instead of a hard switch. */
+.input { transition: border-color .18s var(--soft), box-shadow .22s var(--soft), background .18s; }
+.input:focus-within { border-color: color-mix(in srgb, var(--accent) 70%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+
+/* Dialogs: the backdrop blurs in, the card settles with a spring. */
+.modal { backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fadeIn .22s var(--soft); }
+.dialog { animation: settle .38s var(--spring); }
+@keyframes settle { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+#start-note:not(:empty) { animation: settle .35s var(--spring); }
+
+/* Page changes cross-fade with a slight rise (View Transitions); the sidebar stays put. */
+.sidebar { view-transition-name: sidebar; }
+::view-transition-old(root) { animation: vt-out .16s var(--soft) both; }
+::view-transition-new(root) { animation: vt-in .32s var(--spring) both; }
+::view-transition-group(sidebar) { animation: none; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } }
+/* Theme switch: a plain, quick fade of the whole window. */
+:root.theme-flip .sidebar { view-transition-name: none; }
+:root.theme-flip::view-transition-old(root) { animation: vt-out .16s linear both; }
+:root.theme-flip::view-transition-new(root) { animation: fade .16s linear both; }
+@keyframes fade { from { opacity: 0; } }
+/* Fades replay only on a real change (new page, new workout), never on a re-render. */
+.page, .session { animation: none; }
+.page.enter, .session.enter { animation: pageIn .18s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .key.prominent::after { display: none; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
