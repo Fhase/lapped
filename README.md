@@ -1,53 +1,44 @@
 # lapped
 
-[lapped](https://lapped.fit) is a small Strava companion for the High Park loop in Toronto. Connect Strava, finish the configured loop, and lapped adds a simple receipt to the activity description:
+[lapped.fit](https://lapped.fit) is a Strava companion built around High Park in Toronto. Its main feature counts completed laps on the High Park segment and adds a compact receipt to the ride description. The site also includes a transparent ride-overlay studio and a browser-based indoor cycling trainer.
+
+## High Park lap counter
+
+Connect Strava once. When a ride is uploaded, Strava notifies lapped, which checks the ride for completed efforts on the configured High Park segment. If it finds laps, lapped adds its receipt while preserving the rider’s existing description. Rides without a completed target lap are left alone.
 
 ```text
-laps: 14
-fastest lap: 2:38 · 42.3 km/h
+laps · 14
+fastest lap · 2:38 · 42.3 km/h
 www.lapped.fit
 ```
 
-If an activity has no completed effort for the configured High Park segment, lapped leaves its description untouched. It preserves any rider-written description and replaces only its own receipt when a ride is rescanned.
+The segment ID is configurable with `HIGH_PARK_SEGMENT_ID`. lapped processes each rider’s own activities; it does not publish cross-athlete rankings.
 
-## How it works
+## Ride overlays
 
-1. A rider authorizes lapped with Strava.
-2. Strava sends lapped an activity webhook after upload or update.
-3. lapped reads that rider's activity, counts efforts on the configured segment, and writes the receipt only when there is at least one match.
+The [overlay studio](https://lapped.fit/overlay) turns a ride’s lap details into a transparent image to share over a photo. Choose a recent ride or paste its Strava link, pick a layout and image ratio, then save or share the PNG.
 
-lapped is intentionally a personal utility: it does not provide public leaderboards, cross-athlete rankings, or historical activity archives.
+## Indoor trainer
 
-The included Chrome extension is optional. It lets a rider manually rescan an existing Strava activity.
+The [indoor trainer](https://lapped.fit/trainer/) provides structured workouts in the browser. It can connect to Bluetooth FTMS smart trainers, power meters, cadence sensors, and heart-rate straps. Compatible smart trainers can follow workout targets with ERG control. FTP tests estimate and update FTP, and Strava upload is available for completed rides.
 
-## Privacy and security
+The trainer uses Web Bluetooth, so it needs a supported browser and a secure connection such as the live HTTPS site. Bluetooth access and ERG control depend on the connected device.
 
-- lapped requests Strava's `activity:read_all` and `activity:write` scopes. Those permissions are needed to inspect segment efforts and write the receipt to the rider's own activity description.
-- Connected-athlete tokens are stored on the service's persistent disk encrypted with AES-256-GCM. The encryption key and all Strava credentials live only in environment variables, never in this repository.
-- Athlete ID, display name, connection time, and encrypted tokens are retained only while a rider remains connected. The duplicate-prevention cache is pruned within seven days; activity and segment-effort history are not retained.
-- Riders can view the account data lapped retains at `/account/data` while connected, and can request correction or deletion through the privacy route described on the site.
-- `data/`, `.env`, deployment keys, and dependency folders are excluded from Git.
-- The owner dashboard is protected by Strava authentication, an owner-only athlete check, and a signed, HttpOnly, secure cookie. It is not a hidden public page.
-- Riders can revoke access at any time from lapped or their Strava account settings. Revocation removes their authorization and stored operational records.
+## Optional Chrome extension
 
-No web service can honestly promise to be unhackable. Keep the deployment platform and GitHub account protected with strong, unique passwords and two-factor authentication; rotate credentials promptly if there is any concern they were exposed.
+The `extension/` folder contains an optional Chrome extension for manually rescanning an existing Strava activity.
 
 ## Run locally
 
-### iPhone preview support
+Use Node.js 22 and npm. Create a Strava API application, set its local authorization callback domain to `localhost`, then configure the environment:
 
-`mobile.js` adds app-specific sessions, cached personal stats, a queued yearly-refresh request, and private paginated discovery of the signed-in athlete’s receipted rides. Mobile sessions are separate from website sessions and Strava authorization. App sign-out only revokes that app session. Existing website callback behavior, connections, encryption keys and automatic descriptions remain in place.
+```sh
+cp .env.example .env
+npm ci
+npm run dev
+```
 
-Mobile OAuth uses the already-registered HTTPS callback at `/auth/strava/complete`, validates a one-time state and a PKCE-bound code exchange, and stores only a hash of the app session in `mobile-sessions.json` on the encrypted persistent disk. The app never receives Strava access/refresh tokens or the client secret. Ride discovery is limited to 20 mobile history API reads per 15 minutes globally, with additional backoff at 70% of reported app read limits or on 429 responses. Empty history pages can occur while recent activities are scanned. Older rides are requested a page at a time. Only the exact target segment on the owner's own receipted activities is included; this is not a complete permanent archive.
-
-Tests use in-memory fixtures and no real Strava requests: `node --test test/mobile.test.js`.
-
-1. Create a Strava API application. For local development, set its authorization callback domain to `localhost`.
-2. Copy `.env.example` to `.env` and supply the values below.
-3. Run `npm install && npm run dev`.
-4. Visit `http://localhost:3000`, connect Strava, then optionally load `extension/` through Chrome's `chrome://extensions` page (Developer mode → **Load unpacked**).
-
-Required environment variables:
+Set these values in `.env`:
 
 ```text
 STRAVA_CLIENT_ID=
@@ -56,16 +47,27 @@ HIGH_PARK_SEGMENT_ID=16091644
 SESSION_SECRET=
 TOKEN_ENCRYPTION_KEY=
 STRAVA_VERIFY_TOKEN=
+APP_URL=http://localhost:3000
 ```
 
-`ADMIN_ATHLETE_ID` is also recommended for every independent deployment; it must be the Strava athlete ID allowed to view `/admin`.
+Open [http://localhost:3000](http://localhost:3000). Strava webhooks need a publicly reachable HTTPS callback; for local webhook development, use a secure tunnel and register its `/webhook` URL.
 
 ## Deploy on Render
 
-`render.yaml` creates the web service and a 1 GB persistent disk for encrypted token data. In Render, enter the Strava client ID, client secret, and the owner athlete ID as protected environment variables. Set `APP_URL` to the public URL when using a custom domain. Then set that hostname as the Strava application's authorization callback domain and register `https://<your-host>/webhook` as the Strava webhook callback.
+`render.yaml` configures the Node web service and a persistent disk for encrypted account data. Set the Strava credentials, encryption key, session secret, target segment ID, webhook verification token, and canonical `APP_URL` in the Render environment. Register the matching HTTPS callback with the Strava application and `https://<your-domain>/webhook` as the webhook callback URL.
 
-The canonical live lapped deployment is [lapped.fit](https://lapped.fit), including the private owner page at [lapped.fit/admin](https://lapped.fit/admin).
+## Privacy and data
 
-## Security reports
+- lapped uses Strava’s `activity:read_all` and `activity:write` permissions to inspect a rider’s activities and update that rider’s own ride descriptions.
+- Strava authorization tokens are encrypted at rest with AES-256-GCM. Production secrets belong in environment variables, not in Git.
+- lapped keeps the account and short-lived processing data needed to operate the service. It does not keep a permanent archive of full Strava activities or segment efforts.
+- Riders can revoke lapped’s access through lapped or their Strava account settings.
+- Keep `.env`, service data, and deployment credentials out of Git.
 
-Please do not post security-sensitive details in a public issue. Use GitHub's private vulnerability reporting for this repository when it is available, or contact the repository owner privately through GitHub.
+## Tests
+
+Run the automated checks with:
+
+```sh
+node --test test/*.test.js
+```
