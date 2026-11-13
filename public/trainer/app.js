@@ -334,12 +334,26 @@ async function uploadToStrava(ride, samples) {
       upload = await poll.json().catch(() => ({}));
       if (!poll.ok) return fail("Strava upload failed. " + (upload.message || `Error ${poll.status}`));
     }
-    if (upload.error) return fail("Strava upload failed. " + upload.error);
+    if (upload.error) return fail(/duplicate/i.test(upload.error) ? "Strava upload failed. This ride is already on Strava. Delete it there first to reupload." : "Strava upload failed. " + String(upload.error).replace(/<[^>]*>/g, ""));
     if (!upload.activity_id) return fail("Strava is still processing the ride. Check Strava before retrying.");
     strava.lastActivity = upload.activity_id;
+    await rememberUpload(ride, samples, upload.activity_id);
     await fetch(`/api/trainer/activities/${upload.activity_id}/mute`, { method: "PUT", credentials: "same-origin" }).catch(() => {});
     fail("Uploaded to Strava.");
   } catch (error) { fail("Strava upload failed. " + error.message); }
+}
+
+/** Marks the ride as on Strava, here and in the rider's lapped account, so its button hides or becomes Reupload. */
+async function rememberUpload(ride, samples, activity) {
+  const saved = { ...ride, stravaActivity: activity };
+  await model.store.update(saved).catch(() => {});
+  if (account.id) account.pushRide(saved, samples).catch(() => {});
+  model.history = model.history.map((r) => r.id === ride.id ? saved : r);
+  if (ui.finished?.ride.id === ride.id) ui.finished.ride = saved;
+  if (ui.selectedRide?.id === ride.id) {
+    ui.selectedRide = saved;
+    for (const button of document.querySelectorAll('[data-act="upload"]')) button.innerHTML = `${icon("up")}Reupload to Strava`;
+  }
 }
 
 /** Updates only the upload status and buttons, so the page and dialog don't rebuild (no flash, no replayed animation). */
@@ -534,7 +548,7 @@ function detailsHtml(ride) {
   const metric = (name, v, unit, color) => `<div class="metric"><span class="k">${name}</span><div class="value">${value(v, 34, "")}${unit && v != null ? `<span class="unit muted" style="font:400 11px var(--font)">${unit}</span>` : ""}</div></div>`.replace('class="num "', `class="num" style="color:${color || "var(--ink)"}"`);
   return `<div style="display:flex;flex-direction:column;gap:12px"><div class="panel">
     <div class="details-head"><div class="text"><h2>${esc(ride.name)}</h2><span class="muted">${dateText(ride.started)}</span></div>
-      <button class="key" data-act="upload" ${strava.busy ? "disabled" : ""} title="${strava.connected ? "Upload this ride file with its stats" : "Connect Strava in Settings"}">${icon("up")}${strava.connected ? "Upload to Strava" : "Connect Strava"}</button>
+      <button class="key" data-act="upload" ${strava.busy ? "disabled" : ""} title="${strava.connected ? "Upload this ride file with its stats" : "Connect Strava in Settings"}">${icon("up")}${!strava.connected ? "Connect Strava" : ride.stravaActivity ? "Reupload to Strava" : "Upload to Strava"}</button>
       <button class="key" data-act="export">${icon("down")}Export TCX</button>
       <button class="delete" data-act="delete-saved">${icon("trash")}Delete ride</button></div>
     <div style="display:flex;gap:16px">${toggleHtml("Power", "var(--ink)", ui.showPower, "power")}${toggleHtml("Heart rate", "var(--heart)", ui.showHeart, "heart")}</div>
@@ -633,12 +647,13 @@ function completeStravaHtml() {
   const status = strava.status ?? (strava.connected && auto ? "Uploading to Strava…" : null);
   const failed = strava.status?.startsWith("Strava upload failed");
   return `${status ? `<div class="status">${esc(status)}</div>` : ""}
-    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : (!auto || failed ? `<button class="key" data-act="upload-finished" ${strava.busy ? "disabled" : ""}>${icon("up")}Upload to Strava</button>` : "")}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
+    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : (!ui.finished.ride.stravaActivity && (!auto || failed) ? `<button class="key" data-act="upload-finished" ${strava.busy ? "disabled" : ""}>${icon("up")}Upload to Strava</button>` : "")}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
 }
 function refreshDialog() { const d = document.getElementById("dialog"); if (d) d.innerHTML = dialogHtml(); }
 
 // Overlays: waiting for power, 3-2-1 countdown and the pause symbol.
 let overlayKey = null;
+let shownOverlay = ""; // survives render(), which rebuilds the overlay host
 const overlayVisible = () => Boolean(model.ride && (model.awaitingPower || model.countdown != null || pausedVisible()));
 const pausedVisible = () => ui.page === "ride" && model.ride && !model.running && !model.awaitingPower && model.countdown == null && !ui.endStage && !ui.finished && !ui.error;
 function refreshOverlay() {
@@ -646,14 +661,23 @@ function refreshOverlay() {
   if (!host) return;
   const key = model.ride && model.countdown != null ? `c${model.countdown}` : model.ride && model.awaitingPower ? "wait" : pausedVisible() ? "pause" : "";
   if (key === overlayKey) return;
-  overlayKey = key;
+  // Already covered (next countdown number, or a page re-render): keep the blur and darkening steady.
+  const continuing = Boolean(key && shownOverlay);
+  overlayKey = key; shownOverlay = key;
   const ride = document.getElementById("ride");
-  if (ride) ride.className = `ride ${key && ui.page === "ride" ? "blurred" : "unblurred"}`;
+  if (ride) ride.className = `ride ${key && ui.page === "ride" ? "blurred" : "unblurred"}${continuing ? " steady" : ""}`;
   if (!key) { host.innerHTML = ""; return; }
   const content = key === "wait" ? `<div class="waiting"><h3>Start pedaling</h3><p>The countdown starts when your power reads.</p></div>`
     : key === "pause" ? `<button class="paused" data-act="toggle-run" title="Resume" aria-label="Paused. Resume ride">${icon("pause", "fill")}</button>`
     : `<div class="count num">${model.countdown}</div>`;
-  host.innerHTML = `<div class="cover pass ${key === "pause" ? "fast" : ""}"><div class="dim"></div>${content}</div>`;
+  const cover = host.querySelector(".cover");
+  if (cover) {
+    cover.classList.toggle("fast", key === "pause");
+    cover.lastElementChild.remove();
+    cover.insertAdjacentHTML("beforeend", content); // only the number animates in
+    return;
+  }
+  host.innerHTML = `<div class="cover pass ${key === "pause" ? "fast" : ""}${continuing ? " steady" : ""}"><div class="dim"></div>${content}</div>`;
 }
 
 // Mini player in a Document Picture-in-Picture window (Chrome and Edge).

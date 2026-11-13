@@ -178,6 +178,7 @@ svg.icon.fill { fill: currentColor; stroke: none; }
 .unblurred { filter: blur(0); transition: filter .25s ease; }
 .cover { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; animation: fadeIn .4s ease; }
 .cover.fast { animation-duration: .18s; }
+.cover.steady, .ride.steady { animation: none; transition: none; }
 .cover .dim { position: absolute; inset: 0; background: rgba(0,0,0,.4); pointer-events: none; }
 .cover.pass { pointer-events: none; }
 .count { position: relative; font-size: 150px; color: #fff; animation: countIn .55s cubic-bezier(.2,.9,.25,1); }
