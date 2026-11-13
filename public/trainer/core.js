@@ -179,8 +179,9 @@ export function rideSummary(ride, samples) {
   return [
     ride.name.toLowerCase(),
     clockText(ride.elapsed) + (stats.completion != null ? ` · ${stats.completion}% done` : ""),
-    stats.normalizedPower != null && `np · ${stats.normalizedPower} w`,
-    stats.stress != null && `tss · ${stats.stress}`,
+    // Always listed: "–" when the ride had under 30 s of power (np) or no FTP when it started (tss).
+    `np · ${stats.normalizedPower != null ? `${stats.normalizedPower} w` : "–"}`,
+    `tss · ${stats.stress ?? "–"}`,
     "lapped.fit/trainer"
   ].filter(Boolean).join("\n");
 }

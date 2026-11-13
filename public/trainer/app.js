@@ -645,9 +645,10 @@ function completeHtml() {
 function completeStravaHtml() {
   const auto = prefs.get("stravaAutoUpload", false);
   const status = strava.status ?? (strava.connected && auto ? "Uploading to Strava…" : null);
-  const failed = strava.status?.startsWith("Strava upload failed");
+  // The button stays put so Done never moves: greyed out while uploading and once the ride is on Strava.
+  const uploaded = Boolean(ui.finished.ride.stravaActivity);
   return `${status ? `<div class="status">${esc(status)}</div>` : ""}
-    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : (!ui.finished.ride.stravaActivity && (!auto || failed) ? `<button class="key" data-act="upload-finished" ${strava.busy ? "disabled" : ""}>${icon("up")}Upload to Strava</button>` : "")}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
+    <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : `<button class="key" data-act="upload-finished" ${strava.busy || uploaded ? "disabled" : ""}>${icon("up")}${uploaded ? "Uploaded" : "Upload to Strava"}</button>`}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
 }
 function refreshDialog() { const d = document.getElementById("dialog"); if (d) d.innerHTML = dialogHtml(); }
 
