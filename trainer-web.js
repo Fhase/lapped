@@ -1,44 +1,22 @@
 import express from "express";
-import { timingSafeEqual } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
-const trainerGatePage = fileURLToPath(new URL("./public/trainer/gate.html", import.meta.url));
-
-export function mountTrainerPasswordGate(app, password, isAdmin) {
-  const expected = Buffer.from(password || "");
-  const failedAttempts = new Map();
-
-  app.post("/api/trainer/unlock", (req, res) => {
-    if (!expected.length) return res.sendStatus(503);
-    if (!isAdmin(req.session?.strava?.athlete?.id)) return res.sendStatus(403);
-    const key = req.ip;
-    const attempts = (failedAttempts.get(key) || []).filter((time) => Date.now() - time < 60 * 60 * 1000);
-    if (attempts.length >= 10) return res.sendStatus(429);
-    const supplied = Buffer.from(typeof req.body?.password === "string" ? req.body.password : "");
-    const valid = supplied.length === expected.length && timingSafeEqual(supplied, expected);
-    if (!valid) {
-      attempts.push(Date.now());
-      failedAttempts.set(key, attempts);
-      return res.sendStatus(401);
-    }
-    failedAttempts.delete(key);
-    req.session.trainerUnlocked = true;
-    req.session.save((error) => error ? res.sendStatus(500) : res.sendStatus(204));
-  });
-
+export function mountTrainerAccessGuard(app, isAdmin) {
   app.use("/trainer", (req, res, next) => {
     const athleteId = req.session?.strava?.athlete?.id;
     if (athleteId && !isAdmin(athleteId)) return res.sendStatus(403);
-    res.set("Cache-Control", "no-store");
-    if (athleteId && req.session?.trainerUnlocked === true) return next();
-    if (req.path === "/" || req.path === "/index.html") return res.sendFile(trainerGatePage);
-    return res.sendStatus(401);
+    if (!athleteId) {
+      if (req.method === "GET" && (req.path === "/" || req.path === "/index.html")) {
+        return res.redirect("/trainer/connect?consent=yes");
+      }
+      if (req.method === "GET" && req.path === "/connect" && req.query.consent === "yes") return next();
+      return res.sendStatus(401);
+    }
+    next();
   });
   app.use("/api/trainer", (req, res, next) => {
     const athleteId = req.session?.strava?.athlete?.id;
     if (!athleteId || !isAdmin(athleteId)) return res.sendStatus(403);
-    if (req.session?.trainerUnlocked === true) return next();
-    res.set("Cache-Control", "no-store").status(401).json({ message: "Enter the Trainer password to continue." });
+    next();
   });
 }
 

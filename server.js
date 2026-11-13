@@ -1,5 +1,5 @@
 import { mountTrainerBridge } from "./trainer-bridge.js";
-import { mountTrainerPasswordGate, mountTrainerWeb } from "./trainer-web.js";
+import { mountTrainerAccessGuard, mountTrainerWeb } from "./trainer-web.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -159,7 +159,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-mountTrainerPasswordGate(app, process.env.TRAINER_SITE_PASSWORD, isAdminAthlete);
+mountTrainerAccessGuard(app, isAdminAthlete);
 function cookieValue(req, name) {
   return req.headers.cookie?.split(";").map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
