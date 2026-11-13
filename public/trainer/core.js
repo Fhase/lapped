@@ -176,12 +176,12 @@ export function rideStats(ride, samples) {
 /** Strava description in lapped's receipt style: lowercase, dot-separated, link last. */
 export function rideSummary(ride, samples) {
   const stats = rideStats(ride, samples);
+  // The workout name is the activity title only. np and tss are always listed: "–" when the ride
+  // had under 30 s of power (np) or no FTP when it started (tss).
   return [
-    ride.name.toLowerCase(),
-    clockText(ride.elapsed) + (stats.completion != null ? ` · ${stats.completion}% done` : ""),
-    // Always listed: "–" when the ride had under 30 s of power (np) or no FTP when it started (tss).
     `np · ${stats.normalizedPower != null ? `${stats.normalizedPower} w` : "–"}`,
     `tss · ${stats.stress ?? "–"}`,
+    clockText(ride.elapsed) + (stats.completion != null ? ` · ${stats.completion}% done` : ""),
     "lapped.fit/trainer"
   ].filter(Boolean).join("\n");
 }
