@@ -14,7 +14,7 @@ function setTheme(theme) {
   themeToggle.checked = theme === "light";
   themeLabel.textContent = `${theme} mode`;
 }
-setTheme("light");
+setTheme("dark");
 themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);
