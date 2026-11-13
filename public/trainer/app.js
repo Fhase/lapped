@@ -654,12 +654,13 @@ function refreshDialog() { const d = document.getElementById("dialog"); if (d) d
 // Overlays: waiting for power, 3-2-1 countdown and the pause symbol.
 let overlayKey = null;
 let shownOverlay = ""; // survives render(), which rebuilds the overlay host
-const overlayVisible = () => Boolean(model.ride && (model.awaitingPower || model.countdown != null || pausedVisible()));
+// "Start pedaling", the countdown and the pause symbol only cover the ride page.
+const overlayVisible = () => Boolean(ui.page === "ride" && model.ride && (model.awaitingPower || model.countdown != null || pausedVisible()));
 const pausedVisible = () => ui.page === "ride" && model.ride && !model.running && !model.awaitingPower && model.countdown == null && !ui.endStage && !ui.finished && !ui.error;
 function refreshOverlay() {
   const host = document.getElementById("overlay");
   if (!host) return;
-  const key = model.ride && model.countdown != null ? `c${model.countdown}` : model.ride && model.awaitingPower ? "wait" : pausedVisible() ? "pause" : "";
+  const key = !overlayVisible() ? "" : model.countdown != null ? `c${model.countdown}` : model.awaitingPower ? "wait" : "pause";
   if (key === overlayKey) return;
   // Already covered (next countdown number, or a page re-render): keep the blur and darkening steady.
   const continuing = Boolean(key && shownOverlay);
