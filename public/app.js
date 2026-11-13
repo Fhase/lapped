@@ -44,7 +44,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
   connectedStatus.hidden = false;
   connectedOverview.classList.add("stats-loading");
   [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.add("stat-loading"));
-  if (localPreview) {
+  if (localPreview) return new Promise((resolve) => setTimeout(resolve, 200)).then(() => { // mimic a quick real stats wait
     disconnect.hidden = true;
     lifetimeLaps.textContent = "2,043";
     ytdLaps.textContent = "756";
@@ -55,9 +55,9 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     lapStatsStatus.textContent = "staging preview · example stats";
     [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading"));
     connectedOverview.classList.remove("stats-loading");
-    return;
-  }
-  fetch("/api/lap-stats").then((response) => response.ok ? response.json() : Promise.reject()).then((stats) => {
+  });
+  // Hold the reveal briefly for the stats, so the signed-in section rises in with its numbers already in place.
+  const statsShown = fetch("/api/lap-stats").then((response) => response.ok ? response.json() : Promise.reject()).then((stats) => {
     ytdLabel.textContent = `${stats.year} laps`;
     if (stats.lifetime !== null) {
       lifetimeLaps.textContent = Number(stats.lifetime).toLocaleString();
@@ -94,6 +94,7 @@ fetch("/api/status").then((r) => r.json()).then((data) => {
     fastestSpeed.textContent = stats.fastestLap ? (String(stats.fastestLap).split(" · ")[1] || "—") : "—";
     lapStatsStatus.textContent = "Updated from your private Strava segment history.";
   }).catch(() => { [lifetimeLaps, ytdLaps, fastestLap].forEach((element) => element.classList.remove("stat-loading")); connectedOverview.classList.remove("stats-loading"); lapStatsStatus.textContent = "Lap stats are unavailable right now. Come back in a while."; });
+  return Promise.race([statsShown, new Promise((resolve) => setTimeout(resolve, 1500))]);
 }).catch(() => { connect.textContent = "Server unavailable"; connect.removeAttribute("href"); })
   .finally(() => document.documentElement.classList.remove("pending")); // reveal once signed-in or signed-out layout is set
 disconnect.onclick = async () => {

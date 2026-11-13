@@ -86,7 +86,10 @@ h1 { font-size: clamp(56px, 8.7vw, 108px); }
 /* Load: the intro rises in at once; everything that depends on being signed in waits (html.pending)
    until /api/status has set the right layout, then rises in, so nobody sees the signed-out page first. */
 .connect-card, .notes { animation: none; }
-.lap-stats-values strong { transition: color .5s ease; }
+/* Stats wait with a soft pulse (opacity only, cheap) instead of the gradient shimmer, keep their width, then fade in. */
+.lap-stats-values strong { min-width: 4.5ch; transition: opacity .45s ease; }
+.stats-loading .lap-stats-values strong.stat-loading { color: var(--ink); background: none; -webkit-background-clip: border-box; background-clip: border-box; opacity: .3; animation: stat-pulse 1.1s ease-in-out infinite alternate; }
+@keyframes stat-pulse { to { opacity: .12; } }
 .copy, .route-card { animation: rise .7s cubic-bezier(.2,.8,.2,1) both; }
 .route-card { animation-delay: .08s; }
 #lap-link, .connect-card, .notes, .request-card, .site-footer { transition: opacity .6s cubic-bezier(.2,.8,.2,1), transform .6s cubic-bezier(.2,.8,.2,1); }
