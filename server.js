@@ -161,9 +161,14 @@ app.use((req, res, next) => {
   }
   next();
 });
-// Trainer access: the lapped admin, plus athlete IDs listed in TRAINER_ATHLETE_IDS (comma-separated).
-const trainerApproved = new Set(String(process.env.TRAINER_ATHLETE_IDS || "").split(",").map((v) => v.trim()).filter((v) => /^\d+$/.test(v)));
-mountTrainerAccessGuard(app, { isApproved: (id) => isAdminAthlete(id) || trainerApproved.has(id) });
+// Trainer access: the lapped admin always, plus the whitelist managed in /admin. Kept in memory so the
+// guard stays synchronous; loaded at startup and saved on every admin change.
+const trainerWhitelistStore = path.join(dataDir, "trainer-whitelist.json");
+let trainerWhitelist = [];
+readEncryptedStore(trainerWhitelistStore)
+  .then((stored) => { if (Array.isArray(stored)) trainerWhitelist = stored; })
+  .catch((error) => console.error("Trainer whitelist load failed:", error.message));
+mountTrainerAccessGuard(app, { isApproved: (id) => isAdminAthlete(id) || trainerWhitelist.some((entry) => entry.id === id) });
 function cookieValue(req, name) {
   return req.headers.cookie?.split(";").map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
@@ -310,12 +315,13 @@ async function saveFeatureRequest(text) {
   return request;
 }
 
-async function saveWaitlistLead({ name, email, stravaUrl }) {
+async function saveWaitlistLead({ name, email, stravaUrl, source }) {
   const stored = await readEncryptedStore(waitlistStore);
   const leads = Array.isArray(stored) ? stored : [];
-  const existing = leads.find((lead) => String(lead.email || "").toLowerCase() === email.toLowerCase());
+  // Trainer and High Park waitlists share this store; each list checks its own duplicates.
+  const existing = leads.find((lead) => String(lead.email || "").toLowerCase() === email.toLowerCase() && (lead.source || "") === (source || ""));
   if (existing) return { lead: existing, existing: true };
-  const lead = { id: crypto.randomUUID(), name, email, stravaUrl, created_at: new Date().toISOString(), status: "new" };
+  const lead = { id: crypto.randomUUID(), name, email, stravaUrl, ...(source ? { source } : {}), created_at: new Date().toISOString(), status: "new" };
   leads.unshift(lead);
   await writeEncryptedStore(waitlistStore, leads.slice(0, 1000));
   return { lead, existing: false };
@@ -546,10 +552,15 @@ const adminEnhancements = `<style>th:last-child,td:last-child{text-align:right}.
 document.querySelector('.search')?.remove();
 </script>`;
 
+// Shared by /admin and /trainer/admin so both pages look the same.
+const adminStyles = `    :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px 32px 72px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label,.admin-link{color:var(--muted);font-size:12px}.admin-link{text-decoration:underline;text-underline-offset:3px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 42px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.chart-panel{margin-bottom:64px}.chart-tabs{display:flex;gap:8px;margin:15px 0}.chart-tabs button,.pages a{background:none;color:var(--muted);border:1px solid var(--line);padding:7px 10px;font:12px Arial;cursor:pointer;text-decoration:none}.chart-tabs button[aria-pressed="true"],.pages a[aria-current="page"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}.chart{height:170px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--line);padding-top:12px}.chart[hidden]{display:none}.bar{height:100%;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:end;gap:6px}.bar i{display:block;position:relative;height:var(--height);background:var(--accent);transform-origin:bottom;animation:bar-rise .58s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--index) * 18ms)}.bar i:hover::after{content:attr(data-value);position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--ink);color:var(--paper);font:11px Arial;white-space:nowrap;padding:6px 7px}.bar span{display:block;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-align:center}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}.search{display:flex}.search input{background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px;font:13px Arial}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}.pages{display:flex;gap:5px;margin-top:18px}.footer{margin-top:72px;color:var(--muted);font-size:12px}@keyframes bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){.bar i{animation:none}}@media(max-width:600px){body{padding:20px 20px 52px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:40px}.panel-head{display:block}.panel-head p{margin-top:8px}.search{margin-top:14px}table{font-size:12px}.panel th:nth-child(2),.panel td:nth-child(2){display:none}}`;
+const manualPushStyles = `.manual-push{margin:0 0 64px}.manual-push .panel-head{display:block}.manual-push-form{display:flex;gap:8px;margin-top:18px}.manual-push input,.manual-push select{min-width:0;background:transparent;color:var(--ink);border:1px solid var(--line);padding:11px 12px;font:14px Arial}.manual-push-url{flex:1}.manual-push-owner{margin-top:8px;max-width:280px}.manual-push button{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:11px 14px;font:13px Arial;cursor:pointer;white-space:nowrap}.manual-push button[disabled]{cursor:wait;opacity:.6}.manual-result{min-height:20px;margin:13px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.manual-result[data-state="ready"]{color:var(--ink)}.manual-confirm{margin-top:14px}.manual-confirm[hidden],.manual-push-owner[hidden]{display:none}@media(max-width:600px){.manual-push-form{display:block}.manual-push input,.manual-push select{width:100%;max-width:none}.manual-push-form button{margin-top:8px}}`;
+const ticketStyles = `.tickets{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.tickets h2{font-size:15px;margin:0 0 18px}.ticket{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding:16px 0}.ticket p{margin:0 0 8px;font-size:14px;line-height:1.45}.ticket small,.ticket-empty,.archived-folder summary{color:var(--muted);font-size:12px}.ticket-actions{display:flex;gap:6px;align-self:start}.ticket-actions button{background:transparent;color:var(--muted);border:1px solid var(--line);padding:6px 7px;font:11px Arial;cursor:pointer}.ticket-actions button:last-child{color:var(--accent)}.archived-folder{margin-top:16px;border-top:1px solid var(--line)}.archived-folder summary{cursor:pointer;padding:14px 0;list-style:none}.archived-folder summary::before{content:"+";display:inline-block;width:15px}.archived-folder[open] summary::before{content:"−"}@media(max-width:600px){.ticket{display:block}.ticket-actions{margin-top:12px}}`;
+
 function manualPushPanel(tokens = {}) {
   const riders = Object.values(tokens).sort((a, b) => athleteDisplayName(a.athlete).localeCompare(athleteDisplayName(b.athlete)));
   const options = riders.map((token) => `<option value="${escapeHtml(token.athlete?.id)}">${escapeHtml(athleteDisplayName(token.athlete))}</option>`).join("");
-  return `<style>.manual-push{margin:0 0 64px}.manual-push .panel-head{display:block}.manual-push-form{display:flex;gap:8px;margin-top:18px}.manual-push input,.manual-push select{min-width:0;background:transparent;color:var(--ink);border:1px solid var(--line);padding:11px 12px;font:14px Arial}.manual-push-url{flex:1}.manual-push-owner{margin-top:8px;max-width:280px}.manual-push button{border:1px solid var(--ink);background:var(--ink);color:var(--paper);padding:11px 14px;font:13px Arial;cursor:pointer;white-space:nowrap}.manual-push button[disabled]{cursor:wait;opacity:.6}.manual-result{min-height:20px;margin:13px 0 0;color:var(--muted);font-size:13px;line-height:1.45}.manual-result[data-state="ready"]{color:var(--ink)}.manual-confirm{margin-top:14px}.manual-confirm[hidden],.manual-push-owner[hidden]{display:none}@media(max-width:600px){.manual-push-form{display:block}.manual-push input,.manual-push select{width:100%;max-width:none}.manual-push-form button{margin-top:8px}}</style><section class="panel manual-push" aria-labelledby="manual-push-title"><div class="panel-head"><h2 id="manual-push-title">Manual ride push</h2></div><form class="manual-push-form" id="manual-push-form"><input class="manual-push-url" id="manual-push-url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="Strava activity or app link" required><button id="manual-push-check" type="submit">Check ride</button></form><select class="manual-push-owner" id="manual-push-owner" aria-label="Ride owner" hidden><option value="">Select the connected rider</option>${options}</select><div class="manual-result" id="manual-push-result" aria-live="polite"></div><button class="manual-confirm" id="manual-push-confirm" type="button" hidden>Push description</button></section>`;
+  return `<style>${manualPushStyles}</style><section class="panel manual-push" aria-labelledby="manual-push-title"><div class="panel-head"><h2 id="manual-push-title">Manual ride push</h2></div><form class="manual-push-form" id="manual-push-form"><input class="manual-push-url" id="manual-push-url" name="url" type="url" inputmode="url" autocomplete="off" placeholder="Strava activity or app link" required><button id="manual-push-check" type="submit">Check ride</button></form><select class="manual-push-owner" id="manual-push-owner" aria-label="Ride owner" hidden><option value="">Select the connected rider</option>${options}</select><div class="manual-result" id="manual-push-result" aria-live="polite"></div><button class="manual-confirm" id="manual-push-confirm" type="button" hidden>Push description</button></section>`;
 }
 
 const manualPushEnhancements = `<script>
@@ -561,7 +572,7 @@ function ticketPanel(stored) {
   const renderTicket = (request, archived = false) => `<article class="ticket" data-ticket-id="${escapeHtml(request.id)}"><div><p>${escapeHtml(request.text)}</p><small>${escapeHtml(formatJoinedAt(request.created_at))}</small></div><div class="ticket-actions">${archived ? "" : '<button data-ticket-action="archive">archive</button>'}<button data-ticket-action="delete">delete</button></div></article>`;
   const open = requests.filter((request) => request.status !== "archive").slice(0, 50);
   const archived = requests.filter((request) => request.status === "archive").slice(0, 50);
-  return `<style>.tickets{border-top:1px solid var(--ink);padding-top:18px;margin-top:64px}.tickets h2{font-size:15px;margin:0 0 18px}.ticket{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--line);padding:16px 0}.ticket p{margin:0 0 8px;font-size:14px;line-height:1.45}.ticket small,.ticket-empty,.archived-folder summary{color:var(--muted);font-size:12px}.ticket-actions{display:flex;gap:6px;align-self:start}.ticket-actions button{background:transparent;color:var(--muted);border:1px solid var(--line);padding:6px 7px;font:11px Arial;cursor:pointer}.ticket-actions button:last-child{color:var(--accent)}.archived-folder{margin-top:16px;border-top:1px solid var(--line)}.archived-folder summary{cursor:pointer;padding:14px 0;list-style:none}.archived-folder summary::before{content:"+";display:inline-block;width:15px}.archived-folder[open] summary::before{content:"−"}@media(max-width:600px){.ticket{display:block}.ticket-actions{margin-top:12px}}</style><section class="tickets"><h2>Feature requests</h2>${open.map((request) => renderTicket(request)).join("") || "<p class=\"ticket-empty\">No feature requests yet.</p>"}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((request) => renderTicket(request, true)).join("")}</details>` : ""}</section><script>document.querySelectorAll('[data-ticket-action]').forEach(button=>button.onclick=async()=>{const ticket=button.closest('[data-ticket-id]'),action=button.dataset.ticketAction;const response=await fetch('/admin/tickets/'+ticket.dataset.ticketId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){ticket.remove()}})</script>`;
+  return `<style>${ticketStyles}</style><section class="tickets"><h2>Feature requests</h2>${open.map((request) => renderTicket(request)).join("") || "<p class=\"ticket-empty\">No feature requests yet.</p>"}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((request) => renderTicket(request, true)).join("")}</details>` : ""}</section><script>document.querySelectorAll('[data-ticket-action]').forEach(button=>button.onclick=async()=>{const ticket=button.closest('[data-ticket-id]'),action=button.dataset.ticketAction;const response=await fetch('/admin/tickets/'+ticket.dataset.ticketId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){ticket.remove()}})</script>`;
 }
 
 function waitlistPanel(stored) {
@@ -569,6 +580,30 @@ function waitlistPanel(stored) {
   const archived = (Array.isArray(stored) ? stored : []).filter((lead) => lead.status === "archive").slice(0, 100);
   const renderLead = (lead, isArchived = false) => `<article class="ticket waitlist-lead" data-waitlist-id="${escapeHtml(lead.id)}"><div><p><strong>${escapeHtml(lead.name)}</strong> · <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a>${lead.stravaUrl ? ` · <a href="${escapeHtml(lead.stravaUrl)}" target="_blank" rel="noreferrer">Strava</a>` : ""}</p><small>${escapeHtml(formatJoinedAt(lead.created_at))}</small></div><div class="ticket-actions">${isArchived ? "" : '<button data-waitlist-action="archive">archive</button>'}<button data-waitlist-action="delete">delete</button></div></article>`;
   return `<section class="tickets waitlist"><h2>Waitlist</h2>${leads.map((lead) => renderLead(lead)).join("") || '<p class="ticket-empty">No waitlist leads yet.</p>'}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((lead) => renderLead(lead, true)).join("")}</details>` : ""}</section><script>document.querySelectorAll('[data-waitlist-action]').forEach(button=>button.onclick=async()=>{const lead=button.closest('[data-waitlist-id]'),action=button.dataset.waitlistAction;const response=await fetch('/admin/waitlist/'+lead.dataset.waitlistId,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action})});if(response.ok){lead.remove()}})</script>`;
+}
+
+/** Strava athlete ID from an ID or a strava.com/athletes/<id> link; null for anything else (activity or app links). */
+function trainerAthleteFromLink(value) {
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{1,12})$/) || text.match(/^https:\/\/(?:www\.)?strava\.com\/athletes\/(\d{1,12})(?:[/?#]|$)/);
+  return match ? match[1] : null;
+}
+
+function trainerAdminPage(waitlist) {
+  const leads = (Array.isArray(waitlist) ? waitlist : []).filter((lead) => lead.source === "trainer");
+  const open = leads.filter((lead) => lead.status !== "archive"), archived = leads.filter((lead) => lead.status === "archive");
+  const approved = new Set(trainerWhitelist.map((entry) => entry.id));
+  const renderLead = (lead, isArchived = false) => {
+    const athlete = trainerAthleteFromLink(lead.stravaUrl);
+    const grant = athlete && !approved.has(athlete) ? `<button data-trainer-grant="${escapeHtml(athlete)}" data-trainer-note="${escapeHtml(lead.name)}">give access</button>` : "";
+    return `<article class="ticket" data-lead-id="${escapeHtml(lead.id)}"><div><p><strong>${escapeHtml(lead.name)}</strong> · <a href="mailto:${escapeHtml(lead.email)}">${escapeHtml(lead.email)}</a>${lead.stravaUrl ? ` · <a href="${escapeHtml(lead.stravaUrl)}" target="_blank" rel="noreferrer">Strava</a>` : ""}${athlete && approved.has(athlete) ? " · has access" : ""}</p><small>${escapeHtml(formatJoinedAt(lead.created_at))}</small></div><div class="ticket-actions">${grant}${isArchived ? "" : '<button data-lead-action="archive">archive</button>'}<button data-lead-action="delete">delete</button></div></article>`;
+  };
+  const rows = trainerWhitelist.map((entry) => `<li data-trainer-id="${escapeHtml(entry.id)}"><span><strong>${escapeHtml(entry.note || "Athlete")}</strong> · <a href="https://www.strava.com/athletes/${escapeHtml(entry.id)}" target="_blank" rel="noreferrer">${escapeHtml(entry.id)}</a></span><button type="button" class="trainer-remove" data-trainer-remove>remove</button></li>`).join("");
+  return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>lapped — Trainer admin</title><style>${adminStyles}${manualPushStyles}${ticketStyles}.trainer-list{list-style:none;margin:16px 0 0;padding:0}.trainer-list li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line);font-size:14px}.trainer-list a{color:var(--ink)}.manual-push .trainer-remove{background:transparent;color:var(--muted);border-color:var(--line);padding:6px 10px}.top .tag a{color:inherit}</style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">lapped</a><div class="right"><span class="tag">trainer admin</span><span class="tag"><a href="/trainer/">open trainer</a></span></div></nav>
+<section class="panel manual-push" aria-labelledby="trainer-access-title"><div class="panel-head"><h2 id="trainer-access-title">Trainer access</h2></div><form class="manual-push-form" id="trainer-add"><input class="manual-push-url" name="athlete" autocomplete="off" placeholder="Strava athlete link or ID" required><input name="note" maxlength="80" autocomplete="off" placeholder="Name"><button type="submit">Give access</button></form><div class="manual-result" id="trainer-result" aria-live="polite">You always have access. Everyone else sees the waitlist at lapped.fit/trainer.</div><ul class="trainer-list">${rows}</ul></section>
+<section class="tickets"><h2>Trainer waitlist</h2>${open.map((lead) => renderLead(lead)).join("") || '<p class="ticket-empty">No one on the trainer waitlist yet.</p>'}${archived.length ? `<details class="archived-folder"><summary>Archived (${archived.length})</summary>${archived.map((lead) => renderLead(lead, true)).join("")}</details>` : ""}</section>
+<footer class="footer">lapped 2026</footer></main>
+<script>{const say=t=>document.getElementById('trainer-result').textContent=t;const send=async(path,body)=>{const r=await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok){say(j.error||'Could not save.');return false}return true};const access=async body=>{if(await send('/trainer/admin/access',body))location.reload()};document.getElementById('trainer-add').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);access({action:'add',athlete:f.get('athlete'),note:f.get('note')})};document.addEventListener('click',async e=>{const remove=e.target.closest('[data-trainer-remove]'),grant=e.target.closest('[data-trainer-grant]'),lead=e.target.closest('[data-lead-action]');if(remove&&confirm('Remove trainer access?'))access({action:'remove',id:remove.closest('[data-trainer-id]').dataset.trainerId});if(grant)access({action:'add',athlete:grant.dataset.trainerGrant,note:grant.dataset.trainerNote});if(lead){const row=lead.closest('[data-lead-id]');if(await send('/trainer/admin/waitlist/'+row.dataset.leadId,{action:lead.dataset.leadAction}))row.remove()}})}</script></body></html>`;
 }
 
 function waitlistPage() {
@@ -626,7 +661,7 @@ function adminPage(tokens, analytics, { page, query }) {
   const started = visitors.filter((visitor) => visitor.connectStarted).length;
   const pagination = `<nav class="pages">${pageCount > 1 ? Array.from({ length: pageCount }, (_, index) => { const number = index + 1; return `<a ${number === safePage ? 'aria-current="page"' : ""} href="/admin?page=${number}${query ? `&q=${encodeURIComponent(query)}` : ""}">${number}</a>`; }).join("") : ""}</nav>`;
   return `<!doctype html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>lapped — Admin</title><style>
-    :root{color-scheme:dark;--paper:#191a18;--ink:#f2eee7;--muted:#aaa69e;--line:#3c3c38;--accent:#fc4c02}html[data-theme="light"]{color-scheme:light;--paper:#f3f0ea;--ink:#20201e;--muted:#6f6b65;--line:#cbc7bf;--accent:#fc4c02}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif;padding:32px 32px 72px;min-height:100vh;transition:background .25s,color .25s}.wrap{max-width:860px;margin:0 auto}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:86px}.brand{color:var(--ink);text-decoration:none;font-weight:700;font-size:22px;letter-spacing:-.07em}.right{display:flex;gap:12px;align-items:center}.tag,.theme-label,.admin-link{color:var(--muted);font-size:12px}.admin-link{text-decoration:underline;text-underline-offset:3px}.toggle{display:block;width:30px;height:18px;cursor:pointer}.toggle input{position:absolute;opacity:0;pointer-events:none}.track{display:block;position:relative;width:30px;height:18px;border:1px solid var(--muted);border-radius:99px}.track i{position:absolute;top:3px;left:3px;width:10px;height:10px;border-radius:50%;background:var(--ink);transition:transform .2s}.toggle input:checked+.track i{transform:translateX(12px)}.count{font-family:Georgia,"Times New Roman",serif;font-size:clamp(74px,15vw,156px);line-height:.8;letter-spacing:-.08em;margin:0 0 64px}.count span{display:block;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:400;letter-spacing:0;color:var(--muted);margin:52px 0 0}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:0 0 42px}.metric{background:var(--paper);padding:20px}.metric strong{display:block;font-family:Georgia,"Times New Roman",serif;font-size:44px;font-weight:400;letter-spacing:-.07em;line-height:.9}.metric span{display:block;color:var(--muted);font-size:12px;margin-top:10px}.chart-panel{margin-bottom:64px}.chart-tabs{display:flex;gap:8px;margin:15px 0}.chart-tabs button,.pages a{background:none;color:var(--muted);border:1px solid var(--line);padding:7px 10px;font:12px Arial;cursor:pointer;text-decoration:none}.chart-tabs button[aria-pressed="true"],.pages a[aria-current="page"]{color:var(--paper);background:var(--ink);border-color:var(--ink)}.chart{height:170px;display:flex;align-items:end;gap:3px;border-bottom:1px solid var(--line);padding-top:12px}.chart[hidden]{display:none}.bar{height:100%;flex:1;min-width:0;display:flex;flex-direction:column;justify-content:end;gap:6px}.bar i{display:block;position:relative;height:var(--height);background:var(--accent);transform-origin:bottom;animation:bar-rise .58s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--index) * 18ms)}.bar i:hover::after{content:attr(data-value);position:absolute;z-index:2;left:50%;bottom:calc(100% + 7px);transform:translateX(-50%);background:var(--ink);color:var(--paper);font:11px Arial;white-space:nowrap;padding:6px 7px}.bar span{display:block;color:var(--muted);font-size:9px;white-space:nowrap;overflow:hidden;text-align:center}.panel{border-top:1px solid var(--ink);padding-top:18px}.panel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}.panel h2{font-size:15px;margin:0;font-weight:500}.panel p{margin:0;color:var(--muted);font-size:12px}.search{display:flex}.search input{background:transparent;color:var(--ink);border:1px solid var(--line);padding:8px;font:13px Arial}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:15px 0;border-top:1px solid var(--line)}th{color:var(--muted);font-size:11px;font-weight:400}td:last-child{text-align:right;color:var(--accent)}.pages{display:flex;gap:5px;margin-top:18px}.footer{margin-top:72px;color:var(--muted);font-size:12px}@keyframes bar-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){.bar i{animation:none}}@media(max-width:600px){body{padding:20px 20px 52px}.top{margin-bottom:64px}.tag{display:none}.count{font-size:96px;margin-bottom:50px}.metrics{grid-template-columns:1fr;margin-bottom:40px}.panel-head{display:block}.panel-head p{margin-top:8px}.search{margin-top:14px}table{font-size:12px}.panel th:nth-child(2),.panel td:nth-child(2){display:none}}
+${adminStyles}
   </style></head><body><main class="wrap"><nav class="top"><a class="brand" href="/">lapped</a><div class="right"><span class="tag">private admin</span><span class="theme-label" id="theme-label">light mode</span><label class="toggle"><input id="theme-toggle" type="checkbox" aria-label="Use light mode"><span class="track"><i></i></span></label></div></nav><p class="count">${athletes.length}<span>connected athletes</span></p><section class="metrics"><div class="metric"><strong>${visitors.length}</strong><span>site visitors</span></div><div class="metric"><strong>${started}</strong><span>connect starts</span></div></section><section class="chart-panel"><div class="panel-head"><h2>Visitors</h2></div><div class="chart-tabs"><button data-tab="today" aria-pressed="true">daily</button><button data-tab="week" aria-pressed="false">weekly</button><button data-tab="month" aria-pressed="false">monthly</button></div>${chartHtml(analytics, "today")}${chartHtml(analytics, "week")}${chartHtml(analytics, "month")}</section>${manualPushPanel(tokens)}<section class="panel"><div class="panel-head"><div><h2>People connected to lapped</h2></div><form class="search" method="get"><input name="q" value="${escapeHtml(query)}" placeholder="Search athlete or ID" autocomplete="off"></form></div><table><thead><tr><th>athlete</th><th>Strava ID</th><th>joined</th><th>status</th></tr></thead><tbody>${rows}</tbody></table>${pagination}</section><footer class="footer">lapped 2026</footer></main><script>const toggle=document.querySelector('#theme-toggle'),label=document.querySelector('#theme-label'),root=document.documentElement;function setTheme(theme){root.dataset.theme=theme;toggle.checked=theme==='light';label.textContent=theme+' mode'}setTheme(localStorage.getItem('lapped-theme')==='dark'?'dark':'light');toggle.onchange=()=>{const theme=toggle.checked?'light':'dark';setTheme(theme);localStorage.setItem('lapped-theme',theme)};document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(item=>item.setAttribute('aria-pressed',item===button));document.querySelectorAll('.chart').forEach(chart=>chart.hidden=chart.dataset.range!==button.dataset.tab)});const search=document.querySelector('.search input');let searchTimer;search?.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>search.form.submit(),280)})</script></body></html>`;
 }
 
@@ -1830,7 +1865,8 @@ app.post("/api/waitlist", async (req, res, next) => {
       stravaUrl = parsed.toString();
     }
     if (!canSubmitWaitlist(req)) return res.status(429).json({ error: "You’re already on the list, or please try again in an hour." });
-    const saved = await saveWaitlistLead({ name, email, stravaUrl });
+    const source = req.body?.source === "trainer" ? "trainer" : undefined;
+    const saved = await saveWaitlistLead({ name, email, stravaUrl, source });
     res.status(saved.existing ? 200 : 201).json({ ok: true, existing: saved.existing });
   } catch (error) { next(error); }
 });
@@ -1907,7 +1943,8 @@ app.get("/admin", requireAdmin, async (req, res, next) => {
       '<section class="metrics">',
       `<section class="metrics"><div class="metric"><strong>${Object.keys(req.connectedTokens).length}</strong><span>connected athletes</span></div>`
     );
-    const extras = `${waitlistPanel(waitlist)}${ticketPanel(tickets)}`;
+    const highParkLeads = (Array.isArray(waitlist) ? waitlist : []).filter((lead) => lead.source !== "trainer");
+    const extras = `${waitlistPanel(highParkLeads)}${ticketPanel(tickets)}`;
     res.type("html").send(pageHtml.replace("<footer class=\"footer\">", `${extras}<footer class="footer">`).replace("</body>", `${adminEnhancements}${manualPushEnhancements}</body>`));
   } catch (error) { next(error); }
 });
@@ -1996,6 +2033,48 @@ app.post("/admin/tickets/:id", requireAdmin, async (req, res, next) => {
     if (action === "delete") requests.splice(index, 1);
     else requests[index].status = action;
     await writeEncryptedStore(featureRequestsStore, requests);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+// /trainer/admin: only the lapped admin, signed in with Strava. Anyone else gets "Not found".
+// The trainer guard has already turned away everyone who isn't approved for the trainer.
+const requireTrainerAdmin = (req, res, next) => {
+  res.set("Cache-Control", "private, no-store");
+  if (!isAdminAthlete(String(req.session?.strava?.athlete?.id || ""))) return res.status(404).type("text").send("Not found");
+  if (req.method !== "GET" && req.get("origin") !== new URL(canonicalUrl).origin) return res.status(403).json({ error: "Open lapped.fit/trainer/admin and try again." });
+  next();
+};
+app.get("/trainer/admin", requireTrainerAdmin, async (_req, res, next) => {
+  try { res.type("html").send(trainerAdminPage(await readEncryptedStore(waitlistStore))); } catch (error) { next(error); }
+});
+app.post("/trainer/admin/access", requireTrainerAdmin, express.json({ limit: "4kb" }), async (req, res, next) => {
+  try {
+    const action = String(req.body?.action || "");
+    let updated = trainerWhitelist;
+    if (action === "add") {
+      const id = trainerAthleteFromLink(req.body?.athlete);
+      if (!id) return res.status(400).json({ error: "Use a Strava athlete link (strava.com/athletes/…) or the athlete ID." });
+      const note = String(req.body?.note || "").trim().replace(/\s+/g, " ").slice(0, 80);
+      if (!trainerWhitelist.some((entry) => entry.id === id)) updated = [...trainerWhitelist, { id, note, added_at: new Date().toISOString() }];
+    } else if (action === "remove") {
+      const id = String(req.body?.id || "");
+      updated = trainerWhitelist.filter((entry) => entry.id !== id);
+    } else return res.status(400).json({ error: "Invalid action." });
+    await writeEncryptedStore(trainerWhitelistStore, updated);
+    trainerWhitelist = updated;
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+app.post("/trainer/admin/waitlist/:id", requireTrainerAdmin, express.json({ limit: "4kb" }), async (req, res, next) => {
+  try {
+    const action = String(req.body?.action || "");
+    if (!["archive", "delete"].includes(action)) return res.status(400).json({ error: "Invalid action." });
+    const stored = await readEncryptedStore(waitlistStore);
+    const leads = Array.isArray(stored) ? stored : [];
+    const index = leads.findIndex((lead) => lead.id === req.params.id && lead.source === "trainer");
+    if (index === -1) return res.sendStatus(404);
+    if (action === "delete") leads.splice(index, 1); else leads[index].status = "archive";
+    await writeEncryptedStore(waitlistStore, leads);
     res.json({ ok: true });
   } catch (error) { next(error); }
 });

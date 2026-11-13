@@ -220,10 +220,15 @@ test("only approved athletes reach the trainer, however the path is spelled", as
   const get = (path, athlete) => fetch(`http://127.0.0.1:${server.address().port}${path}`, { redirect: "manual", headers: athlete ? { "test-athlete": athlete } : {} });
   assert.equal((await get("/trainer/", "111")).status, 200);
   assert.equal((await get("/trainer/connect", "111")).headers.get("location"), "/trainer/");
-  assert.equal((await get("/trainer/", "222")).status, 404);
+  // Not whitelisted, signed in or not: the trainer page is the waitlist; files and API stay hidden.
+  for (const who of ["222", undefined]) {
+    const landing = await get("/trainer/", who);
+    assert.equal(landing.status, 200);
+    assert.match(await landing.text(), /Join waitlist/);
+    assert.equal((await get("/trainer/app.js", who)).status, 404);
+  }
   assert.equal((await get("/api/trainer/data", "222")).status, 404);
   assert.equal((await get("/trainer/connect", "222")).status, 404); // never starts Strava OAuth
-  assert.equal((await get("/trainer/")).headers.get("location"), "/");
   assert.equal((await get("/api/trainer/me")).status, 404);
   assert.equal((await get("/elsewhere", "222")).status, 200);
 });

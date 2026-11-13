@@ -9,10 +9,10 @@ export function isTrainerPath(rawPath) {
   return /^\/(api\/)?trainer(\/|$)/.test(p);
 }
 
-// Only approved athletes (today: the lapped admin) can open the trainer or its API.
+// Only approved athletes (the lapped admin plus the /admin whitelist) can open the trainer or its API.
 // This guard never starts Strava OAuth and never reads or writes anyone's lapped connection:
 // it only compares the signed-in athlete ID with the approved list.
-export function mountTrainerAccessGuard(app, { isApproved }) {
+export function mountTrainerAccessGuard(app, { isApproved, landing = new URL("./trainer-waitlist.html", import.meta.url).pathname }) {
   app.use((req, res, next) => {
     if (!isTrainerPath(req.path)) return next();
     res.set("Cache-Control", "private, no-store");
@@ -21,8 +21,8 @@ export function mountTrainerAccessGuard(app, { isApproved }) {
       if (req.method === "GET" && /^\/trainer\/connect\/?$/.test(req.path)) return res.redirect("/trainer/");
       return next();
     }
-    // Signed out: send to lapped's home page to sign in there. Signed in but not approved: not found.
-    if (!id && req.method === "GET" && /^\/trainer(\/|\/index\.html)?$/.test(req.path)) return res.redirect("/");
+    // Not on the whitelist (signed in or not): the trainer page is the waitlist. Everything else stays hidden.
+    if (req.method === "GET" && /^\/trainer(\/|\/index\.html)?$/.test(req.path)) return res.sendFile(landing);
     res.status(404).type("text").send("Not found");
   });
 }
