@@ -469,7 +469,7 @@ const sorts = [["default", "Recommended"], ["short", "Shortest first"], ["long",
 const perPage = 10;
 
 // Recommended order under All: one of each type first (so page one is a real mix), then the rest taking turns.
-const featured = ["rampTest", "recovery", "endurance60", "tempo2x20", "sweetSpot2x20", "threshold2x20", "vo2Max5x3", "tabata", "sprints"];
+const featured = ["ftpTest", "recovery", "endurance60", "tempo2x20", "sweetSpot2x20", "threshold2x20", "vo2Max5x3", "tabata", "sprints"];
 function variety(list) {
   const groups = categories.map(([c]) => list.filter((w) => w.category === c).sort((a, b) => featured.includes(b.id) - featured.includes(a.id)));
   const mixed = [];
