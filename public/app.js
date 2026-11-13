@@ -30,6 +30,9 @@ connectForm?.addEventListener("submit", (event) => {
 fetch("/api/status").then((r) => r.json()).then((data) => {
   if (!data.configured) { connect.textContent = "Configure .env first"; connect.disabled = true; return; }
   const localPreview = location.hostname === "localhost" && new URLSearchParams(location.search).has("preview-stats");
+  // Remember the signed-in layout for the next load, so "get lapped" is never drawn and then pulled out (it moved the route card).
+  try { data.connected || localPreview ? localStorage.setItem("lapped-signed-in", "1") : localStorage.removeItem("lapped-signed-in"); } catch {}
+  document.documentElement.classList.toggle("signed-in", Boolean(data.connected || localPreview));
   if (!data.connected && !localPreview) return;
   const athlete = localPreview ? { firstname: "Example", lastname: "Rider" } : data.athlete;
   const name = [athlete?.firstname, athlete?.lastname].filter(Boolean).join(" ");
