@@ -669,7 +669,7 @@ async function loadRide(ride) {
 // Settings
 function settingsHtml() {
   const sections = [["rider", "Rider"], ["devices", "Devices"], ["strava", "Strava"]];
-  const theme = prefs.get("appearance", "Dark");
+  const theme = prefs.get("appearance", "Light");
   return `<h1 class="heading">Settings</h1><div class="settings"><div class="index">${sections.map(([id, name]) => `<button class="${ui.settingsSection === id ? "on" : ""}" data-section="${id}">${name}</button>`).join("")}
     <div class="theme">${["Dark", "Light"].map((t) => `<button class="${theme.toLowerCase() === t.toLowerCase() ? "on" : ""}" data-appearance="${t}" aria-label="${t} appearance">${t}</button>`).join("")}</div></div>
     <div class="section" id="section">${sectionHtml()}</div></div>`;
@@ -995,7 +995,7 @@ document.addEventListener("keydown", (event) => {
 addEventListener("beforeunload", (event) => { if (model.running) event.preventDefault(); });
 addEventListener("resize", () => { const c = document.querySelector("[data-chart-ride]"); if (c) c.style.height = `${chartHeight()}px`; });
 
-function applyTheme() { document.documentElement.dataset.theme = prefs.get("appearance", "Dark").toLowerCase() === "light" ? "light" : "dark"; }
+function applyTheme() { document.documentElement.dataset.theme = prefs.get("appearance", "Light").toLowerCase() === "light" ? "light" : "dark"; }
 
 // ---------- Start ----------
 (async function boot() {

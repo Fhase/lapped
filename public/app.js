@@ -14,10 +14,14 @@ function setTheme(theme) {
   themeToggle.checked = theme === "light";
   themeLabel.textContent = `${theme} mode`;
 }
-setTheme("dark");
+// Light unless the visitor picked dark (same key the admin page uses).
+let savedTheme = null;
+try { savedTheme = localStorage.getItem("lapped-theme"); } catch {}
+setTheme(savedTheme === "dark" ? "dark" : "light");
 themeToggle.onchange = () => {
   const theme = themeToggle.checked ? "light" : "dark";
   setTheme(theme);
+  try { localStorage.setItem("lapped-theme", theme); } catch {}
 };
 privacyConsent?.addEventListener("change", () => { connect.disabled = !privacyConsent.checked; });
 connectForm?.addEventListener("submit", (event) => {
