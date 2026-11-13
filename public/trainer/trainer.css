@@ -395,3 +395,27 @@ input[type="checkbox"] { accent-color: var(--accent); }
   .key.prominent::after { display: none; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* Workout filters: type chips (with each type's zone colour), a sort menu, and pages of ten. */
+.filters { display: flex; align-items: center; gap: 12px; margin-top: -4px; }
+.chips { display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; padding: 3px 2px; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 15px; border: 1px solid var(--border); background: var(--sidebar); color: var(--muted); font: 600 12px var(--font); white-space: nowrap; transition: background .18s, color .18s, border-color .18s, transform .2s var(--spring, ease); }
+.chip i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.chip .n { font: 700 10px var(--number-font); opacity: .55; font-variant-numeric: tabular-nums; }
+.chip:hover { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
+.chip:active { transform: scale(.96); }
+.chip.on { background: var(--ink); color: var(--bg); border-color: transparent; }
+.chip.on .n { opacity: .7; }
+.sort { flex: none; position: relative; display: flex; align-items: center; }
+.sort .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.sort select { appearance: none; -webkit-appearance: none; height: 30px; padding: 0 30px 0 12px; border-radius: 15px; border: 1px solid var(--border); background: var(--sidebar); color: var(--ink); font: 600 12px var(--font); cursor: pointer; transition: border-color .18s; }
+.sort select:hover { border-color: color-mix(in srgb, var(--ink) 18%, transparent); }
+.sort::after { content: ""; position: absolute; right: 13px; top: 12px; width: 5px; height: 5px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); pointer-events: none; }
+.pager { display: flex; justify-content: center; gap: 4px; margin-top: 8px; }
+.pager button { min-width: 30px; height: 30px; padding: 0 6px; border-radius: 7px; border: 1px solid transparent; color: var(--muted); font: 700 12px var(--number-font); display: inline-flex; align-items: center; justify-content: center; transition: background .16s, color .16s, transform .2s var(--spring, ease); }
+.pager button:hover:not(:disabled) { color: var(--ink); background: var(--sidebar); }
+.pager button:active:not(:disabled) { transform: scale(.94); }
+.pager button.on { color: var(--ink); background: var(--panel); border-color: var(--border); }
+.pager button:disabled { opacity: .3; }
+@media (max-width: 760px) { .filters { flex-direction: column; align-items: stretch; gap: 8px; } .sort select { width: 100%; } }

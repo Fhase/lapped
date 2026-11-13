@@ -63,8 +63,10 @@ test("browser trainer uploads with the rider's own session and checks the origin
 });
 
 test("trainer workouts, stats and sensor parsing match the Mac app", () => {
-  assert.equal(workouts.length, 21);
-  assert.deepEqual(workouts.slice(1, 4).map((w) => w.minutes), [30, 63, 93]);
+  assert.equal(workouts.length, 51); // 50 structured sessions plus Free Ride
+  assert.equal(new Set(workouts.map((w) => w.name)).size, 51);
+  assert.ok(workouts.every((w) => w.id === "free" || w.steps.length));
+  assert.deepEqual(["recovery", "endurance60", "endurance90"].map((id) => workouts.find((w) => w.id === id).minutes), [30, 63, 93]);
   assert.equal(trainingStress(workouts.find((w) => w.id === "endurance60").steps), 44);
   // Ramps meet the blocks next to them: no jump at warm-up and cool-down edges.
   for (const w of workouts) {
@@ -80,6 +82,8 @@ test("trainer workouts, stats and sensor parsing match the Mac app", () => {
   assert.equal(rideSummary({ ...ride, name: "Threshold 4×8", elapsed: 120 }, Array.from({ length: 120 }, () => ({ power: 250 }))),
     "np · 250 w\ntss · 3\n2:00 · 6% done\nlapped.fit/trainer");
   assert.equal(rideSummary({ name: "Free Ride", ftp: 0, steps: [], elapsed: 65 }, []), "np · –\ntss · –\n1:05\nlapped.fit/trainer");
+  const eight = { name: "8-Minute FTP Test", ftp: 250, steps: [], elapsed: 600 };
+  assert.equal(rideStats(eight, Array.from({ length: 600 }, () => ({ power: 300 }))).ftpEstimate, 270);
   const twenty = { name: "20-Minute FTP Test", ftp: 250, steps: [], elapsed: 1300 };
   assert.equal(rideStats(twenty, Array.from({ length: 1300 }, () => ({ power: 300 }))).ftpEstimate, 285);
 
