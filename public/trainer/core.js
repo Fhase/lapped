@@ -173,15 +173,16 @@ export function rideStats(ride, samples) {
 }
 
 /** Strava description: workout name, what it is, time and how much was completed. */
+/** Strava description in lapped's receipt style: lowercase, dot-separated, link last. */
 export function rideSummary(ride, samples) {
-  const lines = [ride.name];
-  const workout = workoutNamed(ride.name);
-  if (workout && workout.id !== "free") lines.push(workout.structure);
-  let line = clockText(ride.elapsed);
-  const completion = rideStats(ride, samples).completion;
-  if (completion != null) line += ` · ${completion}% completed`;
-  lines.push(line);
-  return lines.join("\n");
+  const stats = rideStats(ride, samples);
+  return [
+    ride.name.toLowerCase(),
+    clockText(ride.elapsed) + (stats.completion != null ? ` · ${stats.completion}% done` : ""),
+    stats.normalizedPower != null && `np · ${stats.normalizedPower} w`,
+    stats.stress != null && `tss · ${stats.stress}`,
+    "lapped.fit/trainer"
+  ].filter(Boolean).join("\n");
 }
 
 /** Garmin TCX with a continuous active-time track, so pauses do not inflate the duration. */

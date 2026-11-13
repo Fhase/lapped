@@ -320,7 +320,7 @@ async function uploadToStrava(ride, samples) {
   strava.busy = true; strava.status = "Uploading to Strava…"; stravaChanged();
   const fail = (message) => { strava.status = message; strava.busy = false; stravaChanged(); };
   try {
-    const query = new URLSearchParams({ name: ride.name, description: rideSummary(ride, samples), external_id: `indoortrainer-${ride.id}` });
+    const query = new URLSearchParams({ name: ride.name.toLowerCase(), description: rideSummary(ride, samples), external_id: `indoortrainer-${ride.id}` });
     const response = await fetch(`/api/trainer/uploads?${query}`, {
       method: "POST", credentials: "same-origin", headers: { "content-type": "application/vnd.garmin.tcx+xml" }, body: tcx(ride, samples)
     });

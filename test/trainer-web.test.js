@@ -3,7 +3,7 @@ import express from "express";
 import { once } from "node:events";
 import test from "node:test";
 import { isTrainerPath, mountTrainerAccessGuard, mountTrainerWeb } from "../trainer-web.js";
-import { rideStats, tcx, trainingStress, workouts, parseIndoorBike, parseCyclingPower, parseHeartRate } from "../public/trainer/core.js";
+import { rideStats, rideSummary, tcx, trainingStress, workouts, parseIndoorBike, parseCyclingPower, parseHeartRate } from "../public/trainer/core.js";
 
 test("browser trainer uploads with the rider's own session and checks the origin", async (t) => {
   const app = express();
@@ -76,6 +76,10 @@ test("trainer workouts, stats and sensor parsing match the Mac app", () => {
   const ride = { name: "Ramp Test", ftp: 250, steps: workouts.find((w) => w.id === "rampTest").steps, elapsed: 120 };
   const stats = rideStats(ride, Array.from({ length: 120 }, (_, i) => ({ power: i < 60 ? 200 : 400, heart: null })));
   assert.equal(stats.ftpEstimate, 300);
+  // Strava description: lapped receipt style, lowercase, link last.
+  assert.equal(rideSummary({ ...ride, name: "Threshold 4×8", elapsed: 120 }, Array.from({ length: 120 }, () => ({ power: 250 }))),
+    "threshold 4×8\n2:00 · 6% done\nnp · 250 w\ntss · 3\nlapped.fit/trainer");
+  assert.equal(rideSummary({ name: "Free Ride", ftp: 0, steps: [], elapsed: 65 }, []), "free ride\n1:05\nlapped.fit/trainer");
   const twenty = { name: "20-Minute FTP Test", ftp: 250, steps: [], elapsed: 1300 };
   assert.equal(rideStats(twenty, Array.from({ length: 1300 }, () => ({ power: 300 }))).ftpEstimate, 285);
 
