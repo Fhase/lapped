@@ -13,7 +13,7 @@ const syncedPrefs = ["ftp", "weightKg", "maxHeartRate", "riderName", "workoutFav
 const prefs = {
   get(key, fallback) { try { const v = localStorage.getItem("trainer." + key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } },
   local(key, value) { try { value == null ? localStorage.removeItem("trainer." + key) : localStorage.setItem("trainer." + key, JSON.stringify(value)); } catch {} },
-  set(key, value) { prefs.local(key, value); if (syncedPrefs.includes(key)) account.save("/prefs", "PUT", { [key]: value }); }
+  set(key, value) { prefs.local(key, value); if (syncedPrefs.includes(key)) account.queuePref(key, value); }
 };
 const profile = {
   get ftp() { const v = prefs.get("ftp", 0); return v >= 1 && v <= 1000 ? v : null; },
@@ -74,29 +74,65 @@ devices.onReading = () => tick();
 devices.onError = (message) => { model.erg = false; model.lastTarget = null; model.warning = message; render(); };
 
 // ---------- Lapped account: settings and ride history saved per Strava athlete ----------
+// Every change waits in a queue (in this browser) until lapped confirms it: settings, finished or
+// updated rides, and deletes. The queue is retried at sign-in, when the connection returns, when the
+// tab comes back, and every two minutes, so nothing is lost to a dropped connection or a closed tab.
 const account = {
   id: null,
+  flushing: null,
   async request(path, method = "GET", body) {
     const response = await fetch("/api/trainer" + path, {
       method, credentials: "same-origin",
       ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {})
     });
-    if (!response.ok) throw new Error(`lapped answered ${response.status}`);
+    if (!response.ok) throw Object.assign(new Error(`lapped answered ${response.status}`), { status: response.status });
     return response.status === 204 ? null : response.json();
   },
-  // Saving to lapped never blocks the ride: the browser copy stays, and the next visit retries rides.
-  save(path, method, body) { if (account.id) account.request(path, method, body).catch(() => {}); },
-  pushRide(ride, samples) {
-    const { athlete, remote, ...summary } = ride;
-    return account.request(`/rides/${ride.id}`, "PUT", { ride: summary, samples: samples.map((s) => [s.time ?? null, s.power ?? null, s.heart ?? null]) });
+  queue(key, update) { prefs.local(key, update(prefs.get(key, key === "pendingPrefs" ? {} : []))); },
+  queuePref(key, value) { account.queue("pendingPrefs", (p) => ({ ...p, [key]: value ?? null })); account.flush(); },
+  pushRide(ride) { account.queue("pendingRides", (ids) => [...ids.filter((id) => id !== ride.id), ride.id]); return account.flush(); },
+  forget(id) {
+    account.queue("pendingRides", (ids) => ids.filter((r) => r !== id));
+    account.queue("pendingDeletes", (ids) => [...ids.filter((d) => d !== id), id]);
+    return account.flush();
   },
   mine: (ride) => (ride.athlete ?? null) === account.id,
-  // Deletes made while lapped was unreachable, sent on the next visit so the ride doesn't come back.
-  forget(id) {
-    prefs.local("pendingDeletes", [...prefs.get("pendingDeletes", []), id]);
-    account.request(`/rides/${id}`, "DELETE").then(() => prefs.local("pendingDeletes", prefs.get("pendingDeletes", []).filter((d) => d !== id)), () => {});
+  /** Sends everything waiting. A 4xx other than 401/429 can never succeed (e.g. a ride deleted elsewhere), so it's dropped. */
+  flush() {
+    if (!account.id) return Promise.resolve();
+    if (account.flushing) return account.flushing.then(() => account.flush());
+    const done = (key, value) => account.queue(key, (list) => Array.isArray(list) ? list.filter((x) => x !== value) : list);
+    const final = (error) => error.status >= 400 && error.status < 500 && error.status !== 401 && error.status !== 429;
+    account.flushing = (async () => {
+      const sent = prefs.get("pendingPrefs", {});
+      if (Object.keys(sent).length) {
+        try {
+          await account.request("/prefs", "PUT", sent);
+          // Keep any setting changed again while this was in flight.
+          account.queue("pendingPrefs", (now) => Object.fromEntries(Object.entries(now).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(sent[k]))));
+        } catch (error) { if (final(error)) prefs.local("pendingPrefs", {}); }
+      }
+      for (const id of prefs.get("pendingDeletes", [])) {
+        try { await account.request(`/rides/${id}`, "DELETE"); done("pendingDeletes", id); } catch (error) { if (final(error)) done("pendingDeletes", id); }
+      }
+      const rides = await model.store.rides();
+      for (const id of prefs.get("pendingRides", [])) {
+        const ride = rides.find((r) => r.id === id);
+        if (!ride || ride.state !== "finished" || !account.mine(ride)) { done("pendingRides", id); continue; }
+        try {
+          const { athlete, remote, ...summary } = ride;
+          const samples = await model.store.samples(ride);
+          await account.request(`/rides/${id}`, "PUT", { ride: summary, samples: samples.map((s) => [s.time ?? null, s.power ?? null, s.heart ?? null]) });
+          done("pendingRides", id);
+        } catch (error) { if (final(error)) done("pendingRides", id); }
+      }
+    })().finally(() => { account.flushing = null; });
+    return account.flushing;
   }
 };
+addEventListener("online", () => account.flush());
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") account.flush(); });
+setInterval(() => account.flush(), 120000);
 
 /** Merges this browser with the rider's lapped account: their settings, then rides both ways. */
 async function syncAccount() {
@@ -105,16 +141,15 @@ async function syncAccount() {
   const owner = prefs.get("owner", null);
   // Rides recorded before accounts existed belong to whoever used this browser first.
   for (const ride of await model.store.rides()) if (!ride.athlete && (!owner || owner === id)) await model.store.update({ ...ride, athlete: id });
+  if (owner && owner !== id) { prefs.local("pendingPrefs", {}); prefs.local("pendingRides", []); prefs.local("pendingDeletes", []); } // another rider's queue
   account.id = id;
-  for (const gone of prefs.get("pendingDeletes", [])) {
-    try { await account.request(`/rides/${gone}`, "DELETE"); prefs.local("pendingDeletes", prefs.get("pendingDeletes", []).filter((d) => d !== gone)); } catch {}
-  }
+  await account.flush();
   let data;
   try { data = await account.request("/data"); } catch { return; }
-  if (Object.keys(data.prefs).length) syncedPrefs.forEach((k) => prefs.local(k, data.prefs[k]));
+  const waiting = prefs.get("pendingPrefs", {});
+  if (Object.keys(data.prefs).length) syncedPrefs.forEach((k) => { if (!(k in waiting)) prefs.local(k, data.prefs[k]); });
   else if (!owner || owner === id) {
-    const local = Object.fromEntries(syncedPrefs.map((k) => [k, prefs.get(k, null)]).filter(([, v]) => v != null));
-    if (Object.keys(local).length) await account.request("/prefs", "PUT", local).catch(() => {});
+    for (const k of syncedPrefs) if (prefs.get(k, null) != null) account.queue("pendingPrefs", (p) => ({ ...p, [k]: prefs.get(k, null) }));
   } else syncedPrefs.forEach((k) => prefs.local(k, null)); // another rider's settings stay off this account
   prefs.local("owner", id);
   const deleted = new Set(data.deleted), remote = new Set(data.rides.map((r) => r.id)), here = new Set();
@@ -122,9 +157,10 @@ async function syncAccount() {
     if (!account.mine(ride)) continue;
     here.add(ride.id);
     if (deleted.has(ride.id)) await model.store.remove(ride);
-    else if (ride.state === "finished" && !remote.has(ride.id)) await account.pushRide(ride, await model.store.samples(ride)).catch(() => {});
+    else if (ride.state === "finished" && !remote.has(ride.id)) account.queue("pendingRides", (ids) => ids.includes(ride.id) ? ids : [...ids, ride.id]);
   }
   for (const ride of data.rides) if (!here.has(ride.id)) await model.store.update({ ...ride, athlete: id, remote: true });
+  account.flush();
   applyTheme();
 }
 
@@ -185,7 +221,7 @@ async function completed(saved) {
   model.ride = null; model.liveSamples = []; model.notice = null;
   await refreshHistory();
   ui.finished = { ride: saved, samples, stats: rideStats(saved, samples) };
-  if (account.id) account.pushRide(saved, samples).catch(() => {});
+  account.pushRide(saved);
   ui.page = "home";
   render();
   if (strava.connected && prefs.get("stravaAutoUpload", false) && !strava.busy) uploadToStrava(saved, samples);
@@ -208,7 +244,7 @@ async function discardRide() {
 async function deleteSaved(ride) {
   try {
     await model.store.remove(ride);
-    if (account.id) account.forget(ride.id);
+    account.forget(ride.id);
     await refreshHistory();
     if (model.history[0]) await loadRide(model.history[0]); else ui.selectedRide = null;
     render();
@@ -347,7 +383,7 @@ async function uploadToStrava(ride, samples) {
 async function rememberUpload(ride, samples, activity) {
   const saved = { ...ride, stravaActivity: activity };
   await model.store.update(saved).catch(() => {});
-  if (account.id) account.pushRide(saved, samples).catch(() => {});
+  account.pushRide(saved);
   model.history = model.history.map((r) => r.id === ride.id ? saved : r);
   if (ui.finished?.ride.id === ride.id) ui.finished.ride = saved;
   if (ui.selectedRide?.id === ride.id) {
