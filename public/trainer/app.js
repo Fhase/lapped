@@ -483,17 +483,14 @@ function homeHtml() {
   ui.listPage = Math.min(ui.listPage, pages - 1);
   const list = all.slice(ui.listPage * perPage, (ui.listPage + 1) * perPage);
   const tabs = ["All", "Saved"].map((t) => `<button class="${(t === "Saved") === ui.favoritesOnly ? "on" : ""}" data-act="tab" data-tab="${t}">${t}</button>`).join("");
-  const pool = workouts.filter((w) => !ui.favoritesOnly || favs.has(w.name));
-  const chip = (id, text, color) => {
-    const count = id === "All" ? pool.length : pool.filter((w) => w.category === id).length;
-    return `<button class="chip ${ui.category === id ? "on" : ""}" data-act="category" data-category="${esc(id)}" aria-pressed="${ui.category === id}">${color ? `<i style="background:${color}"></i>` : ""}${esc(text)}<span class="n">${count}</span></button>`;
-  };
-  const chips = [chip("All", "All"), ...categories.map(([id, color, text]) => chip(id, text ?? id, color))].join("");
+  // Type filter as underlined text tabs, the same style as All / Saved.
+  const tab = (id) => `<button class="${ui.category === id ? "on" : ""}" data-act="category" data-category="${esc(id)}" aria-pressed="${ui.category === id}">${esc(id)}</button>`;
+  const types = [tab("All"), ...categories.map(([id]) => tab(id))].join("");
   const sort = `<label class="sort"><span class="sr">Sort</span><select data-act="sort" aria-label="Sort workouts">${sorts.map(([id, text]) => `<option value="${id}" ${ui.sort === id ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
   const pager = pages > 1 ? `<nav class="pager" aria-label="Workout pages"><button data-act="page" data-page="${ui.listPage - 1}" ${ui.listPage === 0 ? "disabled" : ""} aria-label="Previous page">${icon("back")}</button>${Array.from({ length: pages }, (_, i) => `<button class="${i === ui.listPage ? "on" : ""}" data-act="page" data-page="${i}" aria-label="Page ${i + 1}" ${i === ui.listPage ? 'aria-current="page"' : ""}>${i + 1}</button>`).join("")}<button data-act="page" data-page="${ui.listPage + 1}" ${ui.listPage === pages - 1 ? "disabled" : ""} aria-label="Next page">${icon("chevron")}</button></nav>` : "";
   const empty = ui.favoritesOnly ? "No saved sessions here. Star a session to keep it." : "No sessions of this type.";
   return `<div class="home-head"><h1 class="heading">Workouts</h1><div class="tabs">${tabs}</div></div>
-    <div class="filters"><div class="chips" role="group" aria-label="Workout type">${chips}</div>${sort}</div>
+    <div class="filters"><div class="tabs types" role="group" aria-label="Workout type">${types}</div>${sort}</div>
     <div class="split"><div class="list">${list.length ? "" : `<p class="muted" style="font-size:13px;margin:0">${empty}</p>`}${list.map((w) => rowHtml(w, favs)).join("")}${pager}</div>
     <div id="session">${sessionHtml()}</div></div>`;
 }
