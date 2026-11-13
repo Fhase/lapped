@@ -52,8 +52,6 @@ test("browser trainer uploads with the rider's own session and checks the origin
   assert.equal(forwarded[1].url, "https://www.strava.com/api/v3/uploads/7");
   assert.equal((await fetch(`${base}/uploads/x7`, { headers: { "test-athlete": "5" } })).status, 400);
 
-  const connect = await fetch(`${base}/connect?consent=yes`, { redirect: "manual" });
-  assert.equal(connect.headers.get("location"), "/auth/strava?consent=yes");
 });
 
 test("trainer workouts, stats and sensor parsing match the Mac app", () => {
@@ -78,4 +76,37 @@ test("trainer workouts, stats and sensor parsing match the Mac app", () => {
   assert.deepEqual(parseIndoorBike(bytes(0x44, 0x00, 0x10, 0x27, 0xb4, 0x00, 0xfa, 0x00)), { cadence: 90, power: 250 });
   assert.deepEqual(parseCyclingPower(bytes(0x20, 0x00, 0xc8, 0x00, 0x0a, 0x00, 0x00, 0x04)), { power: 200, crankRevolutions: 10, crankEventTime: 1024 });
   assert.equal(parseHeartRate(bytes(0x00, 142)).heart, 142);
+});
+
+test("website ERG runs the FTMS control sequence with confirmations, like the Mac app", async () => {
+  const { Devices } = await import("../public/trainer/devices.js");
+  // A fake FTMS trainer: indications answer each command, power follows the target.
+  const written = [];
+  let indicate = null, bike = null, target = 150;
+  const characteristic = (uuid) => ({
+    addEventListener: (_type, listener) => { if (uuid === 0x2ad9) indicate = listener; else bike = listener; },
+    startNotifications: async () => {},
+    writeValueWithResponse: async (bytes) => {
+      written.push([...bytes]);
+      if (bytes[0] === 0x05) target = bytes[1] | (bytes[2] << 8);
+      setTimeout(() => indicate({ target: { value: new DataView(Uint8Array.of(0x80, bytes[0], 1).buffer) } }), 5);
+    }
+  });
+  const server = { getPrimaryService: async (uuid) => { if (uuid !== 0x1826) throw new Error("no service"); return { getCharacteristic: async (c) => characteristic(c) }; } };
+  const devices = new Devices(() => {});
+  const errors = [];
+  devices.onError = (m) => errors.push(m);
+  const link = { device: { gatt: { connect: async () => server } }, name: "Fake", state: "connecting", reading: {}, time: 0 };
+  devices.links.trainer = link;
+  await devices.connect("trainer", link);
+  const send = (watts) => bike({ target: { value: new DataView(Uint8Array.of(0x44, 0, 0, 0, 0xb4, 0, watts & 0xff, watts >> 8).buffer) } });
+  send(150);
+  assert.ok(devices.canControl);
+  assert.equal(await devices.setPower(237), true);
+  send(target);
+  assert.equal(devices.power(), 237);
+  await devices.stopControl();
+  assert.equal(await devices.setPower(200), true); // after a pause the trainer is started again
+  assert.deepEqual(written, [[0x00], [0x07], [0x05, 237, 0], [0x08, 0x01], [0x07], [0x05, 200, 0]]);
+  assert.deepEqual(errors, []);
 });

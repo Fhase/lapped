@@ -24,8 +24,13 @@ export class Devices {
   /** Opens the browser's Bluetooth chooser filtered to the role's service. Must run from a click. */
   async pair(role) {
     const spec = roles.find((r) => r.id === role);
+    if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability())) {
+      throw new Error("Bluetooth is off, or this browser isn't allowed to use it. On a Mac, check System Settings › Privacy & Security › Bluetooth for Chrome.");
+    }
+    // Many trainers advertise only Cycling Power, so the trainer chooser lists both services.
+    const services = role === "trainer" ? [0x1826, 0x1818] : [spec.service];
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [spec.service] }],
+      filters: services.map((service) => ({ services: [service] })),
       optionalServices: [0x1826, 0x1818, 0x180d]
     });
     this.forget(role);
@@ -57,13 +62,21 @@ export class Devices {
       return c;
     };
     if (role === "trainer") {
+      link.control = null;
+      link.owns = false; link.started = false; link.queue = Promise.resolve();
+      let ftms = null;
+      try { ftms = await server.getPrimaryService(0x1826); } catch {}
+      if (!ftms) return void await notify(0x1818, 0x2a63, parseCyclingPower); // power only, no ERG
       await notify(0x1826, 0x2ad2, parseIndoorBike);
       try {
-        const point = await (await server.getPrimaryService(0x1826)).getCharacteristic(0x2ad9);
-        await point.startNotifications();   // FTMS requires indications on before writes
+        const point = await ftms.getCharacteristic(0x2ad9);
+        // FTMS answers every command with an indication: 0x80, opcode, result (1 = success).
+        point.addEventListener("characteristicvaluechanged", (event) => {
+          const v = event.target.value;
+          if (v.byteLength >= 3 && v.getUint8(0) === 0x80) link.answer?.(v.getUint8(1), v.getUint8(2));
+        });
+        await point.startNotifications();   // indications must be on before writes
         link.control = point;
-        await point.writeValueWithResponse(Uint8Array.of(0x00)); // request control
-        await point.writeValueWithResponse(Uint8Array.of(0x07)); // start or resume
       } catch { link.control = null; }
     } else if (role === "power") {
       await notify(0x1818, 0x2a63, parseCyclingPower);
@@ -116,7 +129,12 @@ export class Devices {
 
   /** Local development only (?simulate on localhost): a fake trainer so the UI can be exercised without hardware. */
   simulate() {
-    const link = { name: "Simulated trainer", state: "live", reading: {}, time: 0, control: { writeValueWithResponse: async (bytes) => { if (bytes[0] === 0x05) link.target = bytes[1] | (bytes[2] << 8); } } };
+    const link = { name: "Simulated trainer", state: "live", reading: {}, time: 0, control: {} };
+    link.owns = false; link.started = false; link.queue = Promise.resolve();
+    link.control.writeValueWithResponse = async (bytes) => {
+      if (bytes[0] === 0x05) link.target = bytes[1] | (bytes[2] << 8);
+      setTimeout(() => link.answer?.(bytes[0], 1), 20);
+    };
     this.links.trainer = link;
     setInterval(() => {
       const base = link.target ?? 180;
@@ -125,16 +143,41 @@ export class Devices {
     this.onChange();
   }
 
-  /** ERG: ask the trainer to hold a target in watts. */
-  async setPower(watts) {
-    const control = this.links.trainer?.control;
-    if (!control) return false;
-    const value = Math.max(0, Math.min(2000, Math.round(watts)));
-    try { await control.writeValueWithResponse(Uint8Array.of(0x05, value & 0xff, value >> 8)); return true; } catch { return false; }
+  /** Sends one FTMS control command and waits for the trainer's confirmation (same sequence as the Mac app). */
+  async command(link, bytes) {
+    const answered = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Trainer did not confirm ERG command")), 3000);
+      link.answer = (opcode, result) => {
+        if (opcode !== bytes[0]) return;
+        clearTimeout(timer); link.answer = null;
+        result === 1 ? resolve() : reject(new Error(`Trainer rejected ERG command (${result})`));
+      };
+    });
+    await link.control.writeValueWithResponse(Uint8Array.from(bytes));
+    await answered;
   }
-  async stopControl() {
-    const control = this.links.trainer?.control;
-    if (!control) return;
-    try { await control.writeValueWithResponse(Uint8Array.of(0x08, 0x02)); } catch {} // pause, releases the resistance target
+
+  /** ERG: take control, start, then set the target in watts. Commands run one at a time. */
+  setPower(watts) {
+    const link = this.links.trainer;
+    if (!link?.control) return Promise.resolve(false);
+    const value = Math.max(0, Math.min(2000, Math.round(watts)));
+    link.queue = link.queue.then(async () => {
+      if (!link.owns) { await this.command(link, [0x00]); link.owns = true; }
+      if (!link.started) { await this.command(link, [0x07]); link.started = true; }
+      await this.command(link, [0x05, value & 0xff, value >> 8]);
+      return true;
+    }).catch((error) => { link.owns = false; link.started = false; this.onError?.(error.message); return false; });
+    return link.queue;
+  }
+
+  /** Releases ERG: Stop (0x08 0x01), so the trainer drops the resistance target. */
+  stopControl() {
+    const link = this.links.trainer;
+    if (!link?.control) return Promise.resolve();
+    link.queue = link.queue.then(async () => {
+      if (link.started) { await this.command(link, [0x08, 0x01]); link.started = false; }
+    }).catch((error) => { link.started = false; this.onError?.("Trainer did not confirm release. Resistance may remain active. " + error.message); });
+    return link.queue;
   }
 }

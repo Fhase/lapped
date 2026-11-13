@@ -67,6 +67,8 @@ const model = {
 const strava = { connected: false, athlete: null, busy: false, status: null };
 const devices = new Devices(() => { if (ui.page === "settings" && ui.settingsSection === "devices") renderSection(); refreshRideBar(); });
 devices.onReading = () => tick();
+// ERG command failed or was not confirmed: turn ERG off and say why, like the Mac app.
+devices.onError = (message) => { model.erg = false; model.lastTarget = null; model.warning = message; render(); };
 
 // ---------- Model ----------
 async function refreshHistory() {
@@ -183,6 +185,7 @@ function setErg(enabled) {
   if (enabled && !(devices.canControl && model.ride && currentStep(model.ride.steps, model.ride.elapsed))) return;
   model.erg = enabled;
   model.lastTarget = null;
+  if (enabled) model.warning = null;
   if (enabled) sendTarget(); else devices.stopControl();
   refreshRideBar();
 }
@@ -308,7 +311,7 @@ function sidebarHtml() {
 }
 
 function noticesHtml() {
-  const list = [model.warning, model.notice, !devices.supported ? "Bluetooth sensors need Chrome or Edge on a computer. You can still browse workouts and history here." : null].filter(Boolean);
+  const list = [model.warning, model.notice, !devices.supported ? "Bluetooth sensors need Chrome or Edge (Mac, Windows, Android or Chromebook). Safari and iPhone can browse workouts and history only." : null].filter(Boolean);
   return list.map((n) => `<div class="notice">${esc(n)}</div>`).join("");
 }
 
@@ -512,7 +515,7 @@ function stravaHtml() {
       ? `<div style="display:flex;align-items:center"><span style="font:500 14px var(--font)">Connected to Strava${name ? ` as ${esc(name)}` : ""}</span><span style="flex:1"></span><a class="key" href="/me" style="text-decoration:none">Manage on lapped.fit</a></div>
          <label class="check"><input type="checkbox" data-act="auto-upload" ${prefs.get("stravaAutoUpload", false) ? "checked" : ""}>Auto-upload finished rides</label>`
       : `<span class="muted" style="font:400 13px var(--font)">Rides upload through your lapped.fit Strava connection. By connecting you accept lapped's <a href="/terms.html">terms</a> and <a href="/privacy.html">privacy policy</a>.</span>
-         <div><a class="key prominent" href="/api/trainer/connect?consent=yes" style="text-decoration:none">Connect with Strava</a></div>`}
+         <div><a class="key prominent" href="/trainer/connect?consent=yes" style="text-decoration:none">Connect with Strava</a></div>`}
     ${strava.status ? `<span class="caption">${esc(strava.status)}</span>` : ""}</div>`;
 }
 function renderSection() {
@@ -639,6 +642,8 @@ function selectWorkout(workout) {
   document.getElementById("session").innerHTML = sessionHtml();
   const host = document.querySelector("[data-chart-session]");
   if (host) charts.push(new Chart(host, { steps: workout.steps, ftp: profile.ftp ?? 0 }));
+  // On phones the session panel sits above the list.
+  if (matchMedia("(max-width: 760px)").matches) document.querySelector(".main")?.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
 }
 
 function showError(message) { ui.error = message; refreshDialog(); }
@@ -660,7 +665,7 @@ app.addEventListener("click", async (event) => {
   if (d.ride) { await loadRide(model.history.find((r) => r.id === d.ride)); return render(); }
   if (d.section) { ui.settingsSection = d.section; return render(); }
   if (d.theme) { prefs.set("appearance", d.theme); applyTheme(); return render(); }
-  if (d.pair) { try { await devices.pair(d.pair); } catch (error) { if (error.name !== "NotFoundError") showError("Could not connect. " + error.message); } return renderSection(); }
+  if (d.pair) { try { await devices.pair(d.pair); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } return renderSection(); }
   if (d.forget) { devices.forget(d.forget); return renderSection(); }
   switch (d.act) {
     case "tab": ui.favoritesOnly = d.tab === "Saved"; return render();

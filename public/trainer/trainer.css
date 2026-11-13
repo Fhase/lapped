@@ -258,3 +258,63 @@ svg.icon.fill { fill: currentColor; stroke: none; }
   .blurred { filter: none; }
 }
 .chart .tip[hidden] { display: none; }
+
+/* Phones and narrow windows: sidebar becomes a bottom tab bar, columns stack, numbers shrink. */
+@media (max-width: 760px) {
+  #app { min-width: 0; height: 100dvh; flex-direction: column-reverse; }
+  .sidebar { width: auto; flex-direction: row; align-items: center; gap: 4px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-right: 0; border-top: 1px solid var(--border); }
+  .sidebar .logo, .sidebar .spacer { display: none; }
+  .nav { flex: 1; flex-direction: column; justify-content: center; gap: 3px; height: 50px; padding: 0; font-size: 11px; }
+  .nav svg { width: 20px; font-size: 18px; }
+  .nav.on::before { left: 50%; top: 0; width: 20px; height: 2px; margin-left: -10px; }
+  .live { padding: 6px 8px; gap: 2px; max-width: 34%; }
+  .live .clock { font-size: 18px; }
+  .live .name, .live .progress, .live .top .arrow { display: none; }
+  .page { padding: 18px 16px 24px; gap: 14px; }
+  .heading { font-size: 30px; }
+  .split { grid-template-columns: 1fr; }
+  #session { order: -1; }
+  .session { padding: 16px; }
+  .session h2 { font-size: 24px; }
+  .session .foot { flex-wrap: wrap; }
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .ride-head h2 { font-size: 17px; }
+  .grid .top { flex-direction: column; }
+  .grid .col { padding: 14px 16px; }
+  .grid .col + .col { border-left: 0; border-top: 1px solid var(--border); }
+  .grid .col .n { height: 64px; }
+  .big { font-size: 64px; }
+  .grid .target { font-size: 30px; }
+  .grid .of { font-size: 18px; }
+  .grid .bottom { height: auto; flex-wrap: wrap; }
+  .small { flex: 1 1 33%; padding: 10px 12px; border-top: 1px solid var(--border); }
+  .small + .small { border-left: 0; }
+  .small .value { font-size: 24px; }
+  .workout { padding: 12px; }
+  .workout .head { flex-wrap: wrap; gap: 10px; }
+  .bar { height: 56px; }
+  .seg { flex-direction: column; gap: 2px; font-size: 11.5px; }
+  .seg .hint { display: none; }
+  .pip { display: none; }
+  .details-head { flex-wrap: wrap; }
+  .details-head .text { flex-basis: 100%; }
+  .details-head h2 { font-size: 20px; }
+  .metrics { flex-wrap: wrap; }
+  .metric { flex: 1 1 40%; }
+  .metric .value { font-size: 26px; }
+  .settings { flex-direction: column; gap: 14px; }
+  .index { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .index button { flex: 1; text-align: center; }
+  .theme { margin: 0 0 0 auto; }
+  .section { width: 100%; }
+  .fields { grid-template-columns: 1fr; }
+  .panel { padding: 16px; }
+  .device-row { flex-wrap: wrap; }
+  .device-row .role { width: auto; }
+  .dialog { width: calc(100vw - 32px); padding: 20px; }
+  .complete { width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
+  .complete .grid3 { gap: 12px 14px; }
+  .complete .grid3 .stat .value { font-size: 22px; }
+  .complete .actions { width: 100%; }
+  .count { font-size: 110px; }
+}
