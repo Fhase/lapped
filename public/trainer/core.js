@@ -34,7 +34,7 @@ function steps(id) {
     case "free": return [];
     case "recovery": return [ramp(300, 40, 52), at(1200, 52), ramp(300, 52, 40)];
     case "recovery45": return [ramp(300, 40, 50), at(2100, 50), ramp(300, 50, 40)];
-    case "recoverySpinUps": return [ramp(300, 40, 50), ...times(6, [at(240, 50), at(60, 58)]), ramp(300, 50, 40)];
+    case "recoverySpinUps": return [ramp(300, 40, 50), ...times(6, [at(240, 50), at(60, 58)]), ramp(300, 58, 40)];
     case "endurance45": main = [at(1800, 68)]; break;
     case "endurance120": main = [at(5700, 68)]; break;
     case "endurance180": main = [at(9300, 66)]; break;
