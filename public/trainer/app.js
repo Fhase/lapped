@@ -222,6 +222,9 @@ async function completed(saved) {
   model.ride = null; model.liveSamples = []; model.notice = null;
   await refreshHistory();
   ui.finished = { ride: saved, samples, stats: rideStats(saved, samples) };
+  // Only the three FTP tests produce an estimate; it becomes the rider's FTP right away (Undo puts the old one back).
+  const estimate = ui.finished.stats.ftpEstimate;
+  if (estimate >= 1 && estimate <= 1000) { ui.finished.ftp = { from: profile.ftp, to: estimate, applied: true }; prefs.set("ftp", estimate); }
   account.pushRide(saved);
   ui.page = "home";
   render();
@@ -465,10 +468,20 @@ const categories = [
 const sorts = [["default", "Recommended"], ["short", "Shortest first"], ["long", "Longest first"], ["type", "By type"]];
 const perPage = 10;
 
+// Recommended order under All: one of each type first (so page one is a real mix), then the rest taking turns.
+const featured = ["rampTest", "recovery", "endurance60", "tempo2x20", "sweetSpot2x20", "threshold2x20", "vo2Max5x3", "tabata", "sprints"];
+function variety(list) {
+  const groups = categories.map(([c]) => list.filter((w) => w.category === c).sort((a, b) => featured.includes(b.id) - featured.includes(a.id)));
+  const mixed = [];
+  for (let i = 0; groups.some((g) => i < g.length); i++) for (const g of groups) if (g[i]) mixed.push(g[i]);
+  return mixed;
+}
+
 /** The list after the Saved tab, type filter and sort; Free Ride stays first under All. */
 function filteredWorkouts(favs) {
   let list = workouts.filter((w) => w.id !== "free" && (!ui.favoritesOnly || favs.has(w.name)) && (ui.category === "All" || w.category === ui.category));
   const order = (w) => categories.findIndex(([c]) => c === w.category);
+  if (ui.sort === "default" && ui.category === "All") list = variety(list);
   if (ui.sort === "short") list = [...list].sort((a, b) => a.minutes - b.minutes);
   if (ui.sort === "long") list = [...list].sort((a, b) => b.minutes - a.minutes);
   if (ui.sort === "type") list = [...list].sort((a, b) => order(a) - order(b) || a.minutes - b.minutes);
@@ -718,7 +731,6 @@ function completeHtml() {
   const s = (n, v, u) => stat(n, v, u);
   return `<div class="modal"><div class="dialog complete"><div style="display:flex;flex-direction:column;gap:4px">${label("Ride complete", "var(--accent)")}<h3 style="font-size:26px">${esc(ride.name)}</h3>${stats.completion != null ? `<span class="num muted" style="font-size:15px">${stats.completion}% completed</span>` : ""}</div>
     <div class="grid3">${s("Time", clockText(ride.elapsed), "")}${s("Distance", stats.distanceKm != null ? decimal(stats.distanceKm, 1) : null, "km")}${s("TSS", stats.stress, "")}${s("Avg power", stats.averagePower, "W")}${s("NP", stats.normalizedPower, "W")}${s("Max power", stats.maxPower, "W")}${s("Avg HR", stats.averageHeart, "bpm")}${s("Max HR", stats.maxHeart, "bpm")}${s("Energy", stats.kilojoules, "kJ")}</div>
-    ${stats.ftpEstimate != null ? `<div class="estimate"><div style="display:flex;flex-direction:column;gap:2px">${label("Estimated FTP")}<div style="display:flex;align-items:baseline;gap:6px"><span class="num" style="font-size:30px">${stats.ftpEstimate}</span><span class="muted" style="font:400 12px var(--font)">${ftp ? `W · current ${ftp} W` : "W"}</span></div></div><span style="flex:1"></span><button class="key ${ftp !== stats.ftpEstimate ? "prominent" : ""}" data-act="set-ftp" ${ftp === stats.ftpEstimate || stats.ftpEstimate < 1 || stats.ftpEstimate > 1000 ? "disabled" : ""}>${ftp === stats.ftpEstimate ? "FTP Updated" : "Set FTP"}</button></div>` : ""}
     <div class="divider"></div><div data-strava-area style="display:contents">${completeStravaHtml()}</div></div></div>`;
 }
 function completeStravaHtml() {
@@ -726,7 +738,12 @@ function completeStravaHtml() {
   const status = strava.status ?? (strava.connected && auto ? "Uploading to Strava…" : null);
   // The button stays put so Done never moves: greyed out while uploading and once the ride is on Strava.
   const uploaded = Boolean(ui.finished.ride.stravaActivity);
-  return `${status ? `<div class="status">${esc(status)}</div>` : ""}
+  const f = ui.finished.ftp;
+  const delta = f?.from ? f.to - f.from : 0;
+  const change = !f ? "" : `<div class="ftp-change"><div><span class="label">FTP</span><div class="v num">${f.applied
+    ? `${f.from ? `<span class="muted">${f.from}</span><span class="muted arrow">→</span>` : ""}${f.to} W${delta ? `<span class="d" style="color:${delta > 0 ? "var(--z2)" : "var(--heart)"}">${delta > 0 ? "+" : "−"}${Math.abs(delta)}</span>` : ""}`
+    : `${f.from ?? "–"} W<span class="muted kept">kept</span>`}</div></div><button class="key" data-act="ftp-undo">${f.applied ? "Undo" : `Use ${f.to} W`}</button></div>`;
+  return `${change}${status ? `<div class="status">${esc(status)}</div>` : ""}
     <div class="actions">${!strava.connected ? `<button class="key" data-act="connect-from-complete">Connect Strava</button>` : `<button class="key" data-act="upload-finished" ${strava.busy || uploaded ? "disabled" : ""}>${icon("up")}${uploaded ? "Uploaded" : "Upload to Strava"}</button>`}<button class="key prominent" data-act="done" style="width:120px;flex:none">Done</button></div>`;
 }
 function refreshDialog() { const d = document.getElementById("dialog"); if (d) d.innerHTML = dialogHtml(); }
@@ -915,7 +932,14 @@ app.addEventListener("click", async (event) => {
     case "delete-saved-confirm": { const ride = ui.pendingDelete; ui.pendingDelete = null; return deleteSaved(ride); }
     case "cancel-delete": ui.pendingDelete = null; return refreshDialog();
     case "close-error": ui.error = null; return refreshDialog();
-    case "set-ftp": prefs.set("ftp", ui.finished.stats.ftpEstimate); return refreshDialog();
+    case "ftp-undo": {
+      const f = ui.finished.ftp;
+      f.applied = !f.applied;
+      prefs.set("ftp", f.applied ? f.to : f.from);
+      const area = document.querySelector("[data-strava-area]");
+      if (area) area.innerHTML = completeStravaHtml(); // in place: no dialog replay
+      return;
+    }
     case "upload-finished": return uploadToStrava(ui.finished.ride, ui.finished.samples);
     case "connect-from-complete": ui.finished = null; ui.settingsSection = "strava"; return navigate("settings");
     case "done": ui.finished = null; strava.status = null; return refreshDialog();

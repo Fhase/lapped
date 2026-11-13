@@ -228,9 +228,12 @@ export function rideStats(ride, samples) {
   // Dropouts count as 0 W so a test can't be inflated by missing data.
   const timeline = samples.map((s) => s.power ?? 0);
   const best = (seconds) => Math.max(...rollingAverages(timeline, seconds));
-  if (ride.name === "Ramp Test" && timeline.length >= 60) stats.ftpEstimate = Math.round(best(60) * 0.75);
-  if (ride.name === "20-Minute FTP Test" && timeline.length >= 1200) stats.ftpEstimate = Math.round(best(1200) * 0.95);
-  if (ride.name === "8-Minute FTP Test" && timeline.length >= 480) stats.ftpEstimate = Math.round(best(480) * 0.9);
+  // A test only scores once its effort is ridden (the FTP is then set automatically): the ramp after 8 minutes,
+  // the 8- and 20-minute tests once they reach the cool-down. Ending a test in its warm-up changes nothing.
+  const effortDone = ride.elapsed >= planned - (ride.steps.at(-1)?.seconds ?? 0);
+  if (ride.name === "Ramp Test" && ride.elapsed >= 480 && timeline.length >= 60) stats.ftpEstimate = Math.round(best(60) * 0.75);
+  if (ride.name === "20-Minute FTP Test" && effortDone && timeline.length >= 1200) stats.ftpEstimate = Math.round(best(1200) * 0.95);
+  if (ride.name === "8-Minute FTP Test" && effortDone && timeline.length >= 480) stats.ftpEstimate = Math.round(best(480) * 0.9);
   return stats;
 }
 

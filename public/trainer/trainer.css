@@ -198,7 +198,11 @@ svg.icon.fill { fill: currentColor; stroke: none; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
 .complete { width: 560px; padding: 26px; }
 .complete .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 24px; }
-.complete .estimate { display: flex; align-items: center; padding: 14px; background: var(--sidebar); border-radius: 8px; }
+.complete .ftp-change { display: flex; align-items: center; gap: 12px; }
+.complete .ftp-change > div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.complete .ftp-change .v { font-size: 22px; display: flex; align-items: baseline; gap: 8px; }
+.complete .ftp-change .arrow { font-size: 15px; }
+.complete .ftp-change .d, .complete .ftp-change .kept { font: 600 12px var(--font); }
 .complete .actions { display: flex; gap: 10px; width: 400px; align-self: center; }
 .complete .actions .key:first-child { flex: 1; }
 .complete .status { text-align: center; font: 400 12px var(--font); color: var(--muted); }

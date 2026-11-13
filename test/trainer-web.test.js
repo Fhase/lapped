@@ -75,9 +75,13 @@ test("trainer workouts, stats and sensor parsing match the Mac app", () => {
       if (step.end != null && next && step.end <= 70 && next.end == null) assert.ok(next.percent >= step.end || next.percent === step.end || step.end === 70, w.name);
     });
   }
-  const ride = { name: "Ramp Test", ftp: 250, steps: workouts.find((w) => w.id === "rampTest").steps, elapsed: 120 };
-  const stats = rideStats(ride, Array.from({ length: 120 }, (_, i) => ({ power: i < 60 ? 200 : 400, heart: null })));
+  const ride = { name: "Ramp Test", ftp: 250, steps: workouts.find((w) => w.id === "rampTest").steps, elapsed: 600 };
+  const stats = rideStats(ride, Array.from({ length: 600 }, (_, i) => ({ power: i < 540 ? 200 : 400, heart: null })));
   assert.equal(stats.ftpEstimate, 300);
+  // Ending a test in its warm-up gives no FTP (so nothing is set automatically).
+  assert.equal(rideStats({ ...ride, elapsed: 70 }, Array.from({ length: 70 }, () => ({ power: 120 }))).ftpEstimate, undefined);
+  const twentySteps = workouts.find((w) => w.id === "ftpTest").steps;
+  assert.equal(rideStats({ name: "20-Minute FTP Test", ftp: 250, steps: twentySteps, elapsed: 1500 }, Array.from({ length: 1500 }, () => ({ power: 300 }))).ftpEstimate, undefined);
   // Strava description: lapped receipt style, lowercase, link last.
   assert.equal(rideSummary({ ...ride, name: "Threshold 4×8", elapsed: 120 }, Array.from({ length: 120 }, () => ({ power: 250 }))),
     "np · 250 w\ntss · 3\n2:00 · 6% done\nlapped.fit/trainer");
