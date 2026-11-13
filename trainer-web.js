@@ -1,6 +1,13 @@
 import express from "express";
 
 export function mountTrainerAccessGuard(app, isAdmin) {
+  app.get("/trainer/connect", (req, res) => {
+    const athleteId = req.session?.strava?.athlete?.id;
+    if (athleteId && !isAdmin(athleteId)) return res.sendStatus(403);
+    if (athleteId) return res.redirect("/trainer/");
+    req.session.returnTo = "/trainer/?connected=1";
+    res.redirect("/auth/strava?consent=yes");
+  });
   app.use("/trainer", (req, res, next) => {
     const athleteId = req.session?.strava?.athlete?.id;
     if (athleteId && !isAdmin(athleteId)) return res.sendStatus(403);
@@ -8,7 +15,6 @@ export function mountTrainerAccessGuard(app, isAdmin) {
       if (req.method === "GET" && (req.path === "/" || req.path === "/index.html")) {
         return res.redirect("/trainer/connect?consent=yes");
       }
-      if (req.method === "GET" && req.path === "/connect" && req.query.consent === "yes") return next();
       return res.sendStatus(401);
     }
     next();
@@ -42,13 +48,6 @@ export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch,
       connected: Boolean(athleteId(req)),
       athlete: athlete ? { firstname: athlete.firstname || "", lastname: athlete.lastname || "" } : null
     });
-  });
-
-  // Starting Strava sign-in from the trainer brings the rider back to the trainer afterwards.
-  router.get("/connect", (req, res) => {
-    if (req.query.consent !== "yes") return res.redirect("/trainer/");
-    req.session.returnTo = "/trainer/?connected=1";
-    res.redirect("/auth/strava?consent=yes");
   });
 
   function sameOriginWithAthlete(req, res, next) {
