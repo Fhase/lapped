@@ -1,184 +1,130 @@
 /* Trainer design system for the rest of lapped (main, overlay, admin, trainer admin).
-   Loaded last on each page: it remaps each page's own tokens to the trainer's and restyles in a Swiss, ruled layout.
-   Token names differ per page (--paper/--ink/--red on main, --line/--accent on admin, --orange on overlay), so all are set here. */
+   Loaded last on each page: it remaps each page's own tokens to the trainer's (black, Archivo, DIN numbers, amber).
+   Token names differ per page (--paper/--ink/--red on main, --line/--accent on admin, --orange on overlay), so all are set here.
+   Deliberately plain: hairline rules, sentence-case labels, one amber action per screen, no glows, no decorative motion. */
 @font-face { font-family: "Archivo"; src: url("/fonts/archivo/Archivo.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
 
 html:not([data-theme="light"]) {
   color-scheme: dark;
   --paper: #000; --panel: rgb(19,19,19); --sidebar: rgb(11,11,11); --ink: #fff; --muted: rgb(158,158,163);
-  --line: rgba(255,255,255,.10); --accent: rgb(255,180,84); --on-accent: rgba(0,0,0,.85); --heart: rgb(255,123,145);
+  --line: rgba(255,255,255,.12); --accent: rgb(255,180,84); --on-accent: rgba(0,0,0,.85); --heart: rgb(255,123,145);
   --good: rgb(92,214,120); --z4: rgb(255,214,69);
 }
 html[data-theme="light"] {
   color-scheme: light;
   --paper: rgb(244,244,244); --panel: #fff; --sidebar: rgb(233,233,233); --ink: rgb(20,20,20); --muted: rgb(107,107,107);
-  --line: rgba(0,0,0,.10); --accent: rgb(219,128,15); --on-accent: rgba(0,0,0,.85); --heart: rgb(217,51,84);
-  --good: rgb(40,160,80); --z4: rgb(224,168,0);
+  --line: rgba(0,0,0,.12); --accent: rgb(219,128,15); --on-accent: rgba(0,0,0,.85); --heart: rgb(217,51,84);
+  --good: rgb(40,150,75); --z4: rgb(224,168,0);
 }
 html, html[data-theme] {
   --red: var(--accent); --orange: var(--accent); --route-bg: transparent; --park: var(--line); --route: var(--z4); --route-meta: var(--muted);
   --font: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --number-font: "DIN Alternate", "DINAlternate-Bold", "Barlow Semi Condensed", "Archivo", sans-serif;
-  --ease: cubic-bezier(.2,.8,.2,1);
 }
-body { background: var(--paper); color: var(--ink); font-family: var(--font); -webkit-font-smoothing: antialiased; transition: background .25s, color .25s; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea, .button { font-family: var(--font) !important; }
 ::selection { background: var(--accent); color: var(--on-accent); }
 
 /* ---------- Type ---------- */
-h1, .title-sans, header h1 { font-family: var(--font) !important; font-weight: 700 !important; letter-spacing: -.045em !important; line-height: .92 !important; }
-h2 { font-family: var(--font); font-weight: 700; letter-spacing: -.025em; }
+h1, .title-sans, header h1 { font-family: var(--font) !important; font-weight: 600 !important; letter-spacing: -.035em !important; line-height: .95 !important; }
+h2 { font-family: var(--font); font-weight: 600; letter-spacing: -.02em; }
 .brand, .wordmark { font-family: var(--font); font-weight: 700; letter-spacing: -.04em; color: var(--ink); }
-.lap-stats-values strong, .fastest-stat .fastest-inline b, .metric strong, .stat-value, .scale-tools output, td:nth-child(2) {
-  font-family: var(--number-font) !important; font-weight: 700 !important; font-variant-numeric: tabular-nums; letter-spacing: -.02em !important;
+.lap-stats-values strong, .fastest-stat .fastest-inline b, .metric strong, .stat-value, .scale-tools output {
+  font-family: var(--number-font) !important; font-weight: 700 !important; font-variant-numeric: tabular-nums; letter-spacing: -.01em !important;
 }
-/* Small caps labels, like the trainer's .label */
+td { font-variant-numeric: tabular-nums; }
+/* Labels stay small and sentence case, the way the site has always written them */
 th, .metric span, .field-label, legend, .ratio-tools > span, .scale-tools label, .editor label:not(.switch), .ride-source label,
-.request-kicker, .notes .example-label, .route-meta, .lap-stats-values span, .tag, nav > span, .panel p.kicker {
-  font: 700 10px var(--font) !important; letter-spacing: 1.2px !important; text-transform: uppercase; color: var(--muted) !important;
+.request-kicker, .route-meta, .lap-stats-values span, .tag, nav > span {
+  font: 400 12px var(--font) !important; letter-spacing: 0 !important; text-transform: none; color: var(--muted) !important;
 }
-.lap-stats-values > p .substat { text-transform: none; letter-spacing: 0 !important; font: 600 12px var(--number-font) !important; }
-.tag, nav > span { display: inline-flex; align-items: center; gap: 8px; }
-.tag::before, nav > span::before { content: ""; width: 6px; height: 6px; background: var(--accent); }
+.notes .example-label { font: 600 18px var(--font); letter-spacing: -.02em; }
 .tag a { color: inherit; }
 
-/* ---------- Rules that draw in from the left ---------- */
-.connect-card, .request-card, .panel, .tickets, .workspace, .ride-source { position: relative; border-top-color: transparent !important; }
-.connect-card::before, .request-card::before, .panel::before, .tickets::before {
-  content: ""; position: absolute; top: -1px; left: 0; right: 0; height: 1px; background: var(--ink); transform-origin: left; animation: swiss-rule .9s var(--ease) .1s both;
-}
-@keyframes swiss-rule { from { transform: scaleX(0); } }
-
 /* ---------- Buttons ---------- */
-.button, button { border-radius: 2px; transition: background .15s, color .15s, opacity .15s, transform .1s, border-color .15s; }
-button:active:not(:disabled), .button:active:not(:disabled) { transform: scale(.98); }
-/* Primary buttons: amber, with an arrow that slides in on hover */
-.request-card button, .exports .primary, .manual-push button[type="submit"], .manual-confirm, #trainer-add button, #load-link {
-  background: var(--accent) !important; color: var(--on-accent) !important; border: 1px solid rgba(0,0,0,.12) !important; font-weight: 600 !important;
+.button, button { border-radius: 2px; transition: background .15s, color .15s, opacity .15s, border-color .15s; }
+/* One amber action per screen */
+.request-card button, .exports .primary, .manual-push button[type="submit"], .manual-confirm, #trainer-add button {
+  background: var(--accent) !important; color: var(--on-accent) !important; border: 0 !important; font-weight: 600 !important;
 }
-.request-card button::after, .exports .primary::after, .manual-push button[type="submit"]::after, .manual-confirm::after, #trainer-add button::after, #connect::after {
-  content: "→"; display: inline-block; width: 0; opacity: 0; margin-left: 0; overflow: hidden; vertical-align: bottom; transition: width .25s var(--ease), opacity .2s, margin .25s var(--ease);
-}
-.request-card button:hover:not(:disabled)::after, .exports .primary:hover:not(:disabled)::after, .manual-push button[type="submit"]:hover:not(:disabled)::after,
-.manual-confirm:hover::after, #trainer-add button:hover::after, #connect:hover:not(:disabled)::after { width: 1em; opacity: 1; margin-left: 7px; }
-/* Strava connect keeps Strava orange; disconnect is a quiet destructive outline */
+.request-card button:hover, .exports .primary:hover:not(:disabled), .manual-push button[type="submit"]:hover, #trainer-add button:hover { filter: brightness(1.06); }
 #connect { background: rgb(252,76,2); color: #fff; font-weight: 600; }
 #connect:hover:not(:disabled) { background: rgb(232,66,0); }
-#disconnect { background: transparent; color: var(--heart); border: 1px solid color-mix(in srgb, var(--heart) 45%, transparent); font-weight: 600; }
-#disconnect:hover { background: var(--heart); color: #fff; border-color: transparent; }
-/* Secondary outline buttons */
-.exports button:not(.primary), .ride-link-row button:not(#load-link), #ride-source-toggle, .manual-push .trainer-remove {
-  background: transparent; color: var(--ink); border: 1px solid var(--line) !important; font-weight: 600;
+#disconnect { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+#disconnect:hover { border-color: var(--heart); color: var(--heart); }
+.exports button:not(.primary), .ride-link-row button, #ride-source-toggle, .manual-push .trainer-remove {
+  background: transparent !important; color: var(--ink) !important; border: 1px solid var(--line) !important;
 }
-.exports button:not(.primary):hover, #ride-source-toggle:hover { background: var(--sidebar); }
-
-/* Inline row actions read as text links, sharper on hover */
+.exports button:not(.primary):hover, .ride-link-row button:hover, #ride-source-toggle:hover { border-color: var(--ink) !important; }
+/* Row actions are plain underlined words */
 .ticket-actions button, .trainer-list button {
-  background: none !important; border: 0 !important; padding: 4px 6px !important; color: var(--muted) !important; font: 600 12px var(--font) !important;
-  text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; transition: color .15s, text-decoration-color .2s;
+  background: none !important; border: 0 !important; padding: 2px 0 !important; margin-left: 12px; color: var(--muted) !important; font: 400 12px var(--font) !important;
+  text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px;
 }
 .ticket-actions button:hover, .trainer-list button:hover { color: var(--ink) !important; text-decoration-color: currentColor; }
-.ticket-actions button[data-ticket-action="delete"]:hover, .ticket-actions button[data-waitlist-action="delete"]:hover,
-.ticket-actions button[data-lead-action="delete"]:hover, .trainer-list button:hover { color: var(--heart) !important; }
-.ticket-actions button[data-trainer-grant] { color: var(--accent) !important; }
-.ticket-actions button:last-child { color: var(--muted); }
+.ticket-actions button[data-trainer-grant] { color: var(--ink) !important; text-decoration-color: var(--accent); }
 
-/* ---------- Fields: underline only ---------- */
-.manual-push input, .manual-push select, .search input, .ride-source input, .ride-source select, .fields input {
-  background: transparent !important; border: 0 !important; border-bottom: 1px solid var(--line) !important; border-radius: 0 !important;
-  color: var(--ink); padding: 10px 2px !important; font-size: 14px !important; transition: border-color .2s;
+/* ---------- Fields ---------- */
+.manual-push input, .manual-push select, .search input, .ride-source input, .ride-source select, .request-card textarea {
+  background: transparent !important; border: 1px solid var(--line) !important; border-radius: 2px !important; color: var(--ink); font-size: 14px !important;
 }
-.manual-push input:focus, .search input:focus, .ride-source input:focus, .ride-source select:focus { outline: none; border-bottom-color: var(--ink) !important; }
-.ride-source select, .manual-push select {
-  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%) !important;
-  background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50% !important; background-size: 5px 5px !important; background-repeat: no-repeat !important; padding-right: 26px !important;
-}
-.request-card textarea { border: 1px solid var(--line); border-radius: 2px; transition: border-color .2s; }
-.request-card textarea:focus { outline: none; border-color: var(--ink); }
-input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+.manual-push input:focus, .search input:focus, .ride-source input:focus, .ride-source select:focus, .request-card textarea:focus { outline: none; border-color: var(--ink) !important; }
+.ride-source select { color: var(--ink) !important; }
+input::placeholder, textarea::placeholder { color: var(--muted); }
 
 /* ---------- Toggles ---------- */
-.toggle-track, .track { border-color: var(--line) !important; background: var(--sidebar); transition: background .2s; }
-.toggle-track i, .track i { background: var(--muted) !important; transition: transform .25s var(--ease), background .2s !important; }
-.theme-toggle input:checked + .toggle-track, .toggle input:checked + .track { background: var(--accent); border-color: transparent !important; }
-.theme-toggle input:checked + .toggle-track i, .toggle input:checked + .track i { background: var(--on-accent) !important; }
+.toggle-track, .track { border-color: var(--muted) !important; }
+.toggle-track i, .track i { background: var(--ink) !important; }
 .receipt-option input:checked + i { border-color: var(--accent); background: var(--accent); }
-.consent-box input { border-color: var(--line); border-radius: 2px; }
-.consent-box input:checked { background: var(--accent); box-shadow: inset 0 0 0 4px var(--paper); }
+.consent-box input:checked { background: var(--ink); box-shadow: inset 0 0 0 4px var(--paper); }
 .switch input, .scale-tools input, .photo-adjust input { accent-color: var(--accent) !important; }
 
 /* ---------- Main ---------- */
-h1 { font-size: clamp(56px, 8.7vw, 112px); }
-.route-card { background: transparent; border-left: 1px solid var(--line); }
-.route-card::after { border: 0; width: 140%; height: 70%; left: -20%; right: auto; bottom: -38%; border-radius: 0; background: radial-gradient(50% 50% at 50% 50%, color-mix(in srgb, var(--z4) 14%, transparent), transparent 70%); animation: swiss-breathe 7s ease-in-out infinite; }
-@keyframes swiss-breathe { 50% { opacity: .55; transform: scale(1.06); } }
+h1 { font-size: clamp(56px, 8.7vw, 108px); }
+.route-card { background: transparent; border: 1px solid var(--line); }
+.route-card::after { display: none; }
 .route-card:hover { transform: none; }
 .rider { fill: var(--ink); }
 .start { fill: var(--paper); stroke: var(--ink); }
 .end { fill: var(--ink); }
-.text-link { color: var(--accent); border-bottom-color: currentColor; font-weight: 600; }
-.text-link span { display: inline-block; transition: transform .2s var(--ease); }
-.text-link:hover span { transform: translateY(3px); }
+.text-link { color: var(--ink); border-bottom-color: var(--accent); }
+.connect-card, .request-card { border-color: var(--line) !important; }
+.connect-card { border-top-color: var(--ink) !important; }
 .lap-stats-values { border-left-color: var(--line); }
 .lap-stats-values > p strong, .fastest-stat .fastest-inline strong { font-size: 40px; }
-.fastest-stat strong { color: var(--accent) !important; }
-.description-example { background: none; border-left: 2px solid var(--accent); padding: 4px 0 4px 16px; font-size: 18px; }
-.description-example a { color: var(--accent); }
-.site-footer a, .github-link { text-decoration-color: transparent; transition: color .2s, text-decoration-color .2s; }
-.site-footer a:hover, .github-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+.description-example { background: var(--sidebar); border: 1px solid var(--line); border-radius: 2px; font-family: var(--font); }
+.description-example a { color: var(--ink); text-decoration-color: var(--muted); }
+.site-footer a, .github-link { color: var(--muted); }
+.site-footer a:hover, .github-link:hover { color: var(--ink); }
 
 /* ---------- Admin + trainer admin ---------- */
-.metrics { background: none !important; border: 0 !important; gap: 24px !important; }
-.metric { background: none !important; border-top: 1px solid var(--ink); padding: 14px 0 0 !important; }
-.metric strong { font-size: clamp(40px, 6vw, 72px) !important; line-height: 1 !important; }
-.chart-tabs { gap: 18px !important; border-bottom: 1px solid var(--line); width: fit-content; }
-.chart-tabs button, .pages a { border: 0 !important; background: none !important; padding: 0 0 9px !important; color: var(--muted) !important; font: 500 13px var(--font) !important; position: relative; border-radius: 0; }
-.chart-tabs button[aria-pressed="true"] { color: var(--ink) !important; font-weight: 600 !important; box-shadow: inset 0 -2px 0 var(--accent); }
-.pages a { padding: 7px 10px !important; }
-.pages a[aria-current="page"] { background: var(--ink) !important; color: var(--paper) !important; }
-.bar i { background: var(--z4) !important; opacity: .85; transition: opacity .15s; }
-.bar i:hover { opacity: 1; }
+.metrics { background: var(--line) !important; border: 1px solid var(--line) !important; gap: 1px !important; }
+.metric { background: var(--paper) !important; padding: 18px !important; }
+.metric strong { font-size: clamp(36px, 5vw, 56px) !important; line-height: 1 !important; }
+.chart-tabs { gap: 0 !important; }
+.chart-tabs button, .pages a { border: 1px solid var(--line) !important; background: none !important; color: var(--muted) !important; font: 400 12px var(--font) !important; border-radius: 0; margin-right: -1px; }
+.chart-tabs button[aria-pressed="true"], .pages a[aria-current="page"] { color: var(--paper) !important; background: var(--ink) !important; border-color: var(--ink) !important; }
+.bar i { background: var(--ink) !important; }
+.bar i:hover { background: var(--accent) !important; }
 .bar i:hover::after { background: var(--ink) !important; color: var(--paper) !important; font: 700 11px var(--number-font) !important; }
-.chart { border-bottom-color: var(--ink) !important; }
-.panel h2, .tickets h2 { font-size: 20px !important; font-weight: 700 !important; }
-td:last-child:not([colspan]) { color: var(--good) !important; }
-td[colspan] { color: var(--muted); text-align: left !important; }
-tbody tr td { transition: color .15s; }
-td:nth-child(2) { color: var(--muted); }
-/* Rows: hairline, slide right with an amber tick on hover */
-.ticket, .trainer-list li { position: relative; transition: padding .25s var(--ease); border-top-color: var(--line) !important; }
-.ticket::before, .trainer-list li::before { content: ""; position: absolute; left: 0; top: 50%; width: 0; height: 2px; background: var(--accent); transition: width .25s var(--ease); }
-.ticket:hover, .trainer-list li:hover { padding-left: 18px !important; }
-.ticket:hover::before, .trainer-list li:hover::before { width: 10px; }
-.ticket-actions, .trainer-list button { opacity: .6; transition: opacity .2s; }
-.ticket:hover .ticket-actions, .trainer-list li:hover button { opacity: 1; }
+.panel, .tickets { border-top-color: var(--ink) !important; }
+.panel h2, .tickets h2 { font-size: 16px !important; font-weight: 600 !important; }
+td:last-child { color: var(--muted) !important; }
+td[colspan] { text-align: left !important; }
+.ticket, .trainer-list li { border-top-color: var(--line) !important; }
+.ticket:hover, .trainer-list li:hover, tbody tr:hover td { background: color-mix(in srgb, var(--ink) 3%, transparent); }
 .ticket a, .trainer-list a { color: var(--ink); text-decoration-color: var(--line); text-underline-offset: 3px; }
 .archived-folder { border-top-color: var(--line) !important; }
-.archived-folder summary::before { transition: transform .2s; }
-.manual-result[data-state="ready"], .manual-result[data-state="pushed"] { color: var(--good) !important; }
+.manual-result[data-state="ready"], .manual-result[data-state="pushed"] { color: var(--ink) !important; }
 
 /* ---------- Overlay ---------- */
-header h1 { font-size: clamp(56px, 8.7vw, 112px); }
+header h1 { font-size: clamp(56px, 8.7vw, 108px); }
 .preview { border-radius: 2px; }
-.preview-tools button[aria-pressed=true], .photo-button { color: var(--ink); text-decoration-color: var(--accent); }
-.segmented { border: 0 !important; border-bottom: 1px solid var(--line) !important; gap: 18px; }
-.segmented button { flex: none !important; background: none !important; color: var(--muted) !important; padding: 0 0 9px !important; font-size: 13px !important; }
-.segmented button[aria-pressed=true] { color: var(--ink) !important; font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
-.ratio-tools .segmented button { flex: none !important; }
-.style-options button { border-radius: 2px; border-color: var(--line); transition: border-color .16s, color .16s; }
-.style-options button:hover { color: var(--ink); }
-.style-options button[aria-pressed=true] { border-color: var(--accent); }
-.fields { gap: 18px; }
-.field-label { margin-top: 0 !important; }
-.stat-value { font-size: 32px !important; line-height: 1.1 !important; min-height: 36px; border-top: 1px solid var(--line); padding-top: 10px !important; }
-.exports button { border-radius: 2px; }
+.segmented { border-color: var(--line) !important; }
+.segmented button { color: var(--muted) !important; }
+.segmented button[aria-pressed=true] { background: var(--ink) !important; color: var(--paper) !important; }
+.style-options button { border-radius: 2px; border-color: var(--line); }
+.style-options button[aria-pressed=true] { border-color: var(--ink); color: var(--ink); }
+.stat-value { font-size: 28px !important; line-height: 1.15 !important; min-height: 34px; }
+.preview-tools button[aria-pressed=true], .photo-button { color: var(--ink); }
 footer { border-top-color: var(--line); }
-
-@media (prefers-reduced-motion: reduce) {
-  .connect-card::before, .request-card::before, .panel::before, .tickets::before, .route-card::after { animation: none; }
-  .ticket, .trainer-list li { transition: none; }
-}
-@media (max-width: 600px) {
-  .metrics { gap: 12px !important; }
-  .metric strong { font-size: 32px !important; }
-}
