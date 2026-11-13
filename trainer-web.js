@@ -1,34 +1,36 @@
 import express from "express";
+import path from "node:path";
 
-// Every rider must be signed in with Strava (through lapped) to use the trainer.
-export function mountTrainerAccessGuard(app) {
-  app.get("/trainer/connect", (req, res) => {
-    const athleteId = req.session?.strava?.athlete?.id;
-    if (athleteId) return res.redirect("/trainer/");
-    req.session.returnTo = "/trainer/?connected=1";
-    res.redirect("/auth/strava?consent=yes");
-  });
-  app.use("/trainer", (req, res, next) => {
-    const athleteId = req.session?.strava?.athlete?.id;
-    if (!athleteId) {
-      if (req.method === "GET" && (req.path === "/" || req.path === "/index.html")) {
-        return res.redirect("/trainer/connect?consent=yes");
-      }
-      return res.sendStatus(401);
+/** True for any request aimed at the trainer, however the path is spelled (case, repeated slashes, %-encoding). */
+export function isTrainerPath(rawPath) {
+  let p;
+  try { p = decodeURIComponent(rawPath); } catch { return true; } // undecodable: treat as trainer and refuse
+  p = path.posix.normalize("/" + p.replace(/\\/g, "/")).toLowerCase();
+  return /^\/(api\/)?trainer(\/|$)/.test(p);
+}
+
+// Only approved athletes (today: the lapped admin) can open the trainer or its API.
+// This guard never starts Strava OAuth and never reads or writes anyone's lapped connection:
+// it only compares the signed-in athlete ID with the approved list.
+export function mountTrainerAccessGuard(app, { isApproved }) {
+  app.use((req, res, next) => {
+    if (!isTrainerPath(req.path)) return next();
+    res.set("Cache-Control", "private, no-store");
+    const id = String(req.session?.strava?.athlete?.id || "");
+    if (/^\d+$/.test(id) && isApproved(id)) {
+      if (req.method === "GET" && /^\/trainer\/connect\/?$/.test(req.path)) return res.redirect("/trainer/");
+      return next();
     }
-    next();
-  });
-  app.use("/api/trainer", (req, res, next) => {
-    const athleteId = req.session?.strava?.athlete?.id;
-    if (!athleteId) return res.sendStatus(401);
-    next();
+    // Signed out: send to lapped's home page to sign in there. Signed in but not approved: not found.
+    if (!id && req.method === "GET" && /^\/trainer(\/|\/index\.html)?$/.test(req.path)) return res.redirect("/");
+    res.status(404).type("text").send("Not found");
   });
 }
 
 // Browser version of Indoor Trainer at /trainer. Riders sign in with lapped's existing Strava
 // connection (same session cookie); rides upload to Strava through these two routes.
-// Ride data itself stays in the rider's browser; only the finished ride file passes through here.
-export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch, now = Date.now }) {
+// Settings and finished rides are saved per Strava athlete in `store`, so they follow the rider to any browser.
+export function mountTrainerWeb(app, { origin, accessToken, store, fetchStrava = fetch, now = Date.now }) {
   const router = express.Router();
   const recentUploads = new Map();
   router.use((_req, res, next) => {
@@ -45,7 +47,7 @@ export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch,
     const athlete = req.session?.strava?.athlete;
     res.json({
       connected: Boolean(athleteId(req)),
-      athlete: athlete ? { firstname: athlete.firstname || "", lastname: athlete.lastname || "" } : null
+      athlete: athlete ? { id: String(athlete.id), firstname: athlete.firstname || "", lastname: athlete.lastname || "" } : null
     });
   });
 
@@ -113,6 +115,88 @@ export function mountTrainerWeb(app, { origin, accessToken, fetchStrava = fetch,
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ hide_from_home: true })
     });
   });
+
+  // ---------- Saved data (settings, ride history) ----------
+  const prefRules = {
+    ftp: (v) => Number.isInteger(v) && v >= 1 && v <= 1000,
+    weightKg: (v) => typeof v === "number" && v >= 20 && v <= 200,
+    maxHeartRate: (v) => Number.isInteger(v) && v >= 100 && v <= 230,
+    riderName: (v) => typeof v === "string" && v.length <= 40,
+    workoutFavorites: (v) => Array.isArray(v) && v.length <= 100 && v.every((n) => typeof n === "string" && n.length <= 80),
+    appearance: (v) => v === "Dark" || v === "Light",
+    stravaAutoUpload: (v) => typeof v === "boolean"
+  };
+  const rideId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const maxRides = 3000, maxSeconds = 12 * 3600;
+  const locks = new Map();
+  // One read-modify-write at a time per rider, so two tabs saving at once never lose an update.
+  const withIndex = (athlete, change) => {
+    const run = (locks.get(athlete) || Promise.resolve()).then(async () => {
+      const index = { prefs: {}, rides: {}, deleted: [], ...(await store.read(athlete, "index")) };
+      const result = await change(index);
+      if (result !== false) await store.write(athlete, "index", index);
+      return index;
+    });
+    locks.set(athlete, run.catch(() => {}));
+    return run;
+  };
+  const saved = (handler) => async (req, res) => {
+    if (!store) return res.sendStatus(503);
+    try { await handler(req, res); } catch (error) {
+      console.error("Trainer data failed:", error.message);
+      res.status(500).json({ message: "Could not save to lapped. Your data is still in this browser." });
+    }
+  };
+
+  router.get("/data", sameOriginWithAthlete, saved(async (req, res) => {
+    const index = await withIndex(req.trainerAthlete, () => false);
+    res.json({ prefs: index.prefs, rides: Object.values(index.rides), deleted: index.deleted });
+  }));
+
+  router.put("/prefs", sameOriginWithAthlete, express.json({ limit: "32kb" }), saved(async (req, res) => {
+    const changes = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const keys = Object.keys(changes);
+    if (!keys.length || keys.some((k) => !prefRules[k] || (changes[k] !== null && !prefRules[k](changes[k])))) return res.status(400).json({ message: "Invalid setting." });
+    await withIndex(req.trainerAthlete, (index) => { for (const k of keys) changes[k] === null ? delete index.prefs[k] : (index.prefs[k] = changes[k]); });
+    res.sendStatus(204);
+  }));
+
+  router.get("/rides/:id/samples", sameOriginWithAthlete, saved(async (req, res) => {
+    if (!rideId.test(req.params.id)) return res.sendStatus(400);
+    const file = await store.read(req.trainerAthlete, req.params.id);
+    if (!file.samples) return res.sendStatus(404);
+    res.json({ samples: file.samples });
+  }));
+
+  router.put("/rides/:id", sameOriginWithAthlete, express.json({ limit: "8mb" }), saved(async (req, res) => {
+    const id = req.params.id, ride = req.body?.ride, samples = req.body?.samples;
+    const number = (v) => v === null || (typeof v === "number" && Number.isFinite(v));
+    if (!rideId.test(id) || !ride || typeof ride !== "object" || ride.id !== id || ride.state !== "finished"
+      || !Array.isArray(samples) || samples.length > maxSeconds
+      || !samples.every((s) => Array.isArray(s) && s.length === 3 && s.every(number))
+      || JSON.stringify(ride).length > 64 * 1024) return res.status(400).json({ message: "Invalid ride." });
+    const { athlete: _a, remote: _r, ...summary } = ride;
+    let refused = false;
+    await withIndex(req.trainerAthlete, async (index) => {
+      if (index.deleted.includes(id)) { refused = true; return false; }
+      if (!index.rides[id] && Object.keys(index.rides).length >= maxRides) { refused = true; return false; }
+      await store.write(req.trainerAthlete, id, { samples });
+      index.rides[id] = summary;
+    });
+    res.sendStatus(refused ? 409 : 204);
+  }));
+
+  router.delete("/rides/:id", sameOriginWithAthlete, saved(async (req, res) => {
+    const id = req.params.id;
+    if (!rideId.test(id)) return res.sendStatus(400);
+    await withIndex(req.trainerAthlete, async (index) => {
+      delete index.rides[id];
+      // Tombstones stop another browser that still has the ride from uploading it again.
+      index.deleted = [...index.deleted.filter((d) => d !== id), id].slice(-5000);
+      await store.remove(req.trainerAthlete, id);
+    });
+    res.sendStatus(204);
+  }));
 
   app.use("/api/trainer", router);
 }

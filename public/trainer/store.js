@@ -34,8 +34,8 @@ export class RideStore {
     return result(this.db.transaction("rides").objectStore("rides").getAll());
   }
 
-  async begin(workout, ftp) {
-    const ride = { id: crypto.randomUUID(), name: workout.name, started: Date.now(), ftp, steps: workout.steps, elapsed: 0, state: "running" };
+  async begin(workout, ftp, athlete) {
+    const ride = { id: crypto.randomUUID(), name: workout.name, started: Date.now(), ftp, steps: workout.steps, elapsed: 0, state: "running", athlete };
     const tx = this.db.transaction("rides", "readwrite");
     tx.objectStore("rides").put(ride);
     await done(tx);
@@ -60,6 +60,14 @@ export class RideStore {
     const range = IDBKeyRange.bound([ride.id, 0], [ride.id, Infinity]);
     const rows = await result(this.db.transaction("samples").objectStore("samples").getAll(range));
     return rows.map(({ time, power, heart }) => ({ time, power, heart }));
+  }
+
+  /** Stores a ride saved on lapped (from another browser) with its samples, numbered from second 1. */
+  async put(ride, samples) {
+    const tx = this.db.transaction(["rides", "samples"], "readwrite");
+    tx.objectStore("rides").put(ride);
+    samples.forEach(({ time, power, heart }, i) => tx.objectStore("samples").put({ ride: ride.id, second: i + 1, time, power, heart }));
+    await done(tx);
   }
 
   /** Saves a ride as finished, with its averages for the History list. */

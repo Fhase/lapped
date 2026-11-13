@@ -7,7 +7,7 @@ export const roles = [
   { id: "power", name: "Power", service: 0x1818 },
   { id: "heart", name: "Heart Rate", service: 0x180d }
 ];
-const stateLabel = { connecting: "Connecting…", waiting: "Waiting for data", live: "Live", reconnecting: "Reconnecting…", unavailable: "Bluetooth unavailable" };
+const stateLabel = { connecting: "Connecting…", waiting: "Waiting for data", live: "Live", reconnecting: "Reconnecting…", unavailable: "Bluetooth unavailable", closed: "Simulator closed" };
 const fresh = 3000;
 
 export class Devices {
@@ -45,6 +45,7 @@ export class Devices {
     const link = this.links[role];
     if (!link) return;
     link.forgotten = true;
+    link.socket?.close();
     try { link.device.gatt.connected && link.device.gatt.disconnect(); } catch {}
     delete this.links[role];
     this.onChange();
@@ -125,6 +126,47 @@ export class Devices {
     if (meter && performance.now() - meter.time < fresh) return meter.value;
     const trainer = this.value("trainer", "cadence");
     return trainer == null ? null : Math.round(trainer);
+  }
+
+  /**
+   * Trainer Simulator on this Mac. A Mac can't see its own Bluetooth advertisement, so the simulator
+   * serves the same GATT payloads over a WebSocket on 127.0.0.1:47827. The trainer link keeps the FTMS
+   * control path, so ERG runs exactly as with a real trainer; the heart link reads its strap.
+   */
+  connectSimulator(role, url = "ws://127.0.0.1:47827") {
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(url);
+      socket.binaryType = "arraybuffer";
+      const link = { name: "Trainer Simulator", state: "connecting", reading: {}, time: 0, socket };
+      if (role === "trainer") {
+        link.owns = false; link.started = false; link.queue = Promise.resolve();
+        link.control = { writeValueWithResponse: async (bytes) => socket.send(Uint8Array.of(0xd9, 0x2a, bytes.length, ...bytes)) };
+      }
+      socket.onopen = () => {
+        this.forget(role);
+        this.links[role] = link;
+        link.state = "waiting";
+        this.onChange();
+        resolve();
+      };
+      socket.onerror = () => reject(new Error("Trainer Simulator isn't reachable. Open it on this Mac, press Start, then try again."));
+      socket.onclose = () => {
+        if (link.forgotten || this.links[role] !== link) return;
+        link.state = "closed"; link.control = null;
+        this.onChange();
+      };
+      socket.onmessage = (event) => {
+        const bytes = new Uint8Array(event.data);
+        for (let at = 0; at + 3 <= bytes.length;) {
+          const uuid = bytes[at] | (bytes[at + 1] << 8), length = bytes[at + 2];
+          const payload = new DataView(bytes.buffer, at + 3, length);
+          at += 3 + length;
+          if (role === "trainer" && uuid === 0x2ad2) this.receive(role, link, parseIndoorBike(payload));
+          else if (role === "trainer" && uuid === 0x2ad9 && length >= 3 && payload.getUint8(0) === 0x80) link.answer?.(payload.getUint8(1), payload.getUint8(2));
+          else if (role === "heart" && uuid === 0x2a37) this.receive(role, link, parseHeartRate(payload));
+        }
+      };
+    });
   }
 
   /** Local development only (?simulate on localhost): a fake trainer so the UI can be exercised without hardware. */

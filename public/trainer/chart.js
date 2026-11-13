@@ -126,7 +126,8 @@ export class Chart {
       const end = Math.min(duration, start + step.seconds);
       const color = zoneColor(zoneForPercent(averagePercent(step)));
       const top = y(this.target(step));
-      const left = x(start), right = left + Math.max(0, x(end) - x(start) - (miniature ? 1 : 1.5));
+      // Gap between blocks shrinks with the block, so short intervals in a long workout stay visible.
+      const span = x(end) - x(start), left = x(start), right = left + span - Math.min(miniature ? 1 : 1.5, span * 0.35);
       const startTop = y(this.scaled(step.percent)), endTop = y(this.scaled(percentAt(step, end - start)));
       const path = new Path2D();
       if (isRamp(step)) {

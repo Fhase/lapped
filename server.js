@@ -1,5 +1,5 @@
 import { mountTrainerBridge } from "./trainer-bridge.js";
-import { mountTrainerAccessGuard, mountTrainerWeb } from "./trainer-web.js";
+import { isTrainerPath, mountTrainerAccessGuard, mountTrainerWeb } from "./trainer-web.js";
 import "dotenv/config";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -94,7 +94,9 @@ app.use((_req, res, next) => {
   });
   next();
 });
-app.use(express.json());
+// Trainer routes parse their own bodies after the access check (rides need more than 100 kb).
+const jsonBody = express.json();
+app.use((req, res, next) => isTrainerPath(req.path) ? next() : jsonBody(req, res, next));
 app.use(express.urlencoded({ extended: false }));
 app.use(session({
   name: "lapped_session",
@@ -159,7 +161,9 @@ app.use((req, res, next) => {
   }
   next();
 });
-mountTrainerAccessGuard(app);
+// Trainer access: the lapped admin, plus athlete IDs listed in TRAINER_ATHLETE_IDS (comma-separated).
+const trainerApproved = new Set(String(process.env.TRAINER_ATHLETE_IDS || "").split(",").map((v) => v.trim()).filter((v) => /^\d+$/.test(v)));
+mountTrainerAccessGuard(app, { isApproved: (id) => isAdminAthlete(id) || trainerApproved.has(id) });
 function cookieValue(req, name) {
   return req.headers.cookie?.split(";").map((part) => part.trim())
     .find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1);
@@ -1660,7 +1664,20 @@ mountTrainerBridge(app, {
 });
 
 // Browser trainer at /trainer: uploads with the rider's own lapped Strava session.
-mountTrainerWeb(app, { origin: new URL(canonicalUrl).origin, accessToken });
+// Each rider's trainer data: DATA_DIR/trainer/<athlete>/index.json plus one samples file per ride,
+// encrypted like every other store. Writes go to a temp file first so a crash never leaves half a file.
+const trainerFile = (athlete, name) => path.join(dataDir, "trainer", athlete, `${name}.json`);
+const trainerStore = {
+  read: (athlete, name) => readEncryptedStore(trainerFile(athlete, name)),
+  async write(athlete, name, value) {
+    const file = trainerFile(athlete, name);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await writeEncryptedStore(`${file}.tmp`, value);
+    await fs.rename(`${file}.tmp`, file);
+  },
+  remove: (athlete, name) => fs.rm(trainerFile(athlete, name), { force: true })
+};
+mountTrainerWeb(app, { origin: new URL(canonicalUrl).origin, accessToken, store: trainerStore });
 
 // Additive mobile routes use a separate session store and the same registered
 // HTTPS callback. They never change website cookies, encryption keys or grants.

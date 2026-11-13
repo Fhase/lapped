@@ -8,9 +8,12 @@ import { Devices, roles } from "./devices.js";
 import { RideStore } from "./store.js";
 
 // ---------- Preferences (per browser) ----------
+// These follow the rider: each change is also saved to their lapped account (see account below).
+const syncedPrefs = ["ftp", "weightKg", "maxHeartRate", "riderName", "workoutFavorites", "appearance", "stravaAutoUpload"];
 const prefs = {
   get(key, fallback) { try { const v = localStorage.getItem("trainer." + key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } },
-  set(key, value) { try { localStorage.setItem("trainer." + key, JSON.stringify(value)); } catch {} }
+  local(key, value) { try { value == null ? localStorage.removeItem("trainer." + key) : localStorage.setItem("trainer." + key, JSON.stringify(value)); } catch {} },
+  set(key, value) { prefs.local(key, value); if (syncedPrefs.includes(key)) account.save("/prefs", "PUT", { [key]: value }); }
 };
 const profile = {
   get ftp() { const v = prefs.get("ftp", 0); return v >= 1 && v <= 1000 ? v : null; },
@@ -70,16 +73,71 @@ devices.onReading = () => tick();
 // ERG command failed or was not confirmed: turn ERG off and say why, like the Mac app.
 devices.onError = (message) => { model.erg = false; model.lastTarget = null; model.warning = message; render(); };
 
+// ---------- Lapped account: settings and ride history saved per Strava athlete ----------
+const account = {
+  id: null,
+  async request(path, method = "GET", body) {
+    const response = await fetch("/api/trainer" + path, {
+      method, credentials: "same-origin",
+      ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {})
+    });
+    if (!response.ok) throw new Error(`lapped answered ${response.status}`);
+    return response.status === 204 ? null : response.json();
+  },
+  // Saving to lapped never blocks the ride: the browser copy stays, and the next visit retries rides.
+  save(path, method, body) { if (account.id) account.request(path, method, body).catch(() => {}); },
+  pushRide(ride, samples) {
+    const { athlete, remote, ...summary } = ride;
+    return account.request(`/rides/${ride.id}`, "PUT", { ride: summary, samples: samples.map((s) => [s.time ?? null, s.power ?? null, s.heart ?? null]) });
+  },
+  mine: (ride) => (ride.athlete ?? null) === account.id,
+  // Deletes made while lapped was unreachable, sent on the next visit so the ride doesn't come back.
+  forget(id) {
+    prefs.local("pendingDeletes", [...prefs.get("pendingDeletes", []), id]);
+    account.request(`/rides/${id}`, "DELETE").then(() => prefs.local("pendingDeletes", prefs.get("pendingDeletes", []).filter((d) => d !== id)), () => {});
+  }
+};
+
+/** Merges this browser with the rider's lapped account: their settings, then rides both ways. */
+async function syncAccount() {
+  const id = strava.athlete?.id ? String(strava.athlete.id) : null;
+  if (!id) return;
+  const owner = prefs.get("owner", null);
+  // Rides recorded before accounts existed belong to whoever used this browser first.
+  for (const ride of await model.store.rides()) if (!ride.athlete && (!owner || owner === id)) await model.store.update({ ...ride, athlete: id });
+  account.id = id;
+  for (const gone of prefs.get("pendingDeletes", [])) {
+    try { await account.request(`/rides/${gone}`, "DELETE"); prefs.local("pendingDeletes", prefs.get("pendingDeletes", []).filter((d) => d !== gone)); } catch {}
+  }
+  let data;
+  try { data = await account.request("/data"); } catch { return; }
+  if (Object.keys(data.prefs).length) syncedPrefs.forEach((k) => prefs.local(k, data.prefs[k]));
+  else if (!owner || owner === id) {
+    const local = Object.fromEntries(syncedPrefs.map((k) => [k, prefs.get(k, null)]).filter(([, v]) => v != null));
+    if (Object.keys(local).length) await account.request("/prefs", "PUT", local).catch(() => {});
+  } else syncedPrefs.forEach((k) => prefs.local(k, null)); // another rider's settings stay off this account
+  prefs.local("owner", id);
+  const deleted = new Set(data.deleted), remote = new Set(data.rides.map((r) => r.id)), here = new Set();
+  for (const ride of await model.store.rides()) {
+    if (!account.mine(ride)) continue;
+    here.add(ride.id);
+    if (deleted.has(ride.id)) await model.store.remove(ride);
+    else if (ride.state === "finished" && !remote.has(ride.id)) await account.pushRide(ride, await model.store.samples(ride)).catch(() => {});
+  }
+  for (const ride of data.rides) if (!here.has(ride.id)) await model.store.update({ ...ride, athlete: id, remote: true });
+  applyTheme();
+}
+
 // ---------- Model ----------
 async function refreshHistory() {
-  const rides = await model.store.rides();
+  const rides = (await model.store.rides()).filter(account.mine);
   model.history = rides.filter((r) => r.state === "finished").sort((a, b) => b.started - a.started);
 }
 
 async function startRide(workout) {
   if (model.ride) return;
   try {
-    model.ride = await model.store.begin(workout, profile.ftp ?? 0);
+    model.ride = await model.store.begin(workout, profile.ftp ?? 0, account.id);
     model.liveSamples = []; model.recentPower = []; model.warning = null; model.lastTarget = null;
     model.awaitingPower = true;
     model.ergAtStart = ui.requestedErg && devices.canControl && workout.id !== "free";
@@ -127,6 +185,7 @@ async function completed(saved) {
   model.ride = null; model.liveSamples = []; model.notice = null;
   await refreshHistory();
   ui.finished = { ride: saved, samples, stats: rideStats(saved, samples) };
+  if (account.id) account.pushRide(saved, samples).catch(() => {});
   ui.page = "home";
   render();
   if (strava.connected && prefs.get("stravaAutoUpload", false) && !strava.busy) uploadToStrava(saved, samples);
@@ -149,6 +208,7 @@ async function discardRide() {
 async function deleteSaved(ride) {
   try {
     await model.store.remove(ride);
+    if (account.id) account.forget(ride.id);
     await refreshHistory();
     if (model.history[0]) await loadRide(model.history[0]); else ui.selectedRide = null;
     render();
@@ -479,6 +539,16 @@ function detailsHtml(ride) {
 async function loadRide(ride) {
   ui.selectedRide = ride;
   ui.selectedSamples = await model.store.samples(ride);
+  // A ride saved from another browser: fetch its seconds once, then keep them here.
+  if (ride.remote && !ui.selectedSamples.length) {
+    try {
+      const { samples } = await account.request(`/rides/${ride.id}/samples`);
+      const rows = samples.map(([time, power, heart]) => ({ time, power, heart }));
+      const local = { ...ride, remote: false };
+      await model.store.put(local, rows);
+      if (ui.selectedRide === ride) { ui.selectedRide = local; ui.selectedSamples = rows; }
+    } catch {}
+  }
 }
 
 // Settings
@@ -506,7 +576,7 @@ function devicesHtml() {
   return `<div class="home-head"><span style="font:700 22px var(--font)">Devices</span></div><div class="panel">${label("Paired roles")}${roles.map((role) => {
     const link = devices.links[role.id];
     return `<div class="device-row"><span class="role">${role.name}</span><span class="dn">${esc(devices.name(role.id))}</span>${link ? `<span class="st ${link.state === "live" ? "live" : ""}">${devices.label(role.id)}</span><button class="key" data-forget="${role.id}">Forget</button>` : `<button class="key" data-pair="${role.id}">Pair</button>`}</div>`;
-  }).join("")}</div><span class="caption">Pair opens your browser's Bluetooth list. Wake the sensor first (pedal, or wear the strap). A trainer that supports FTMS can hold ERG targets. Pairings last until you close this tab.</span>`;
+  }).join("")}<div class="device-row"><span class="role">Simulator</span><span class="dn">Trainer Simulator on this Mac</span><button class="key" data-act="simulator">Connect</button></div></div><span class="caption">Pair opens your browser's Bluetooth list. Wake the sensor first (pedal, or wear the strap). A trainer that supports FTMS can hold ERG targets. Pairings last until you close this tab. To test without hardware, open Trainer Simulator on this Mac and press Connect; Chrome may ask to allow local network access.</span>`;
 }
 
 function stravaHtml() {
@@ -669,6 +739,9 @@ app.addEventListener("click", async (event) => {
   if (d.pair) { try { await devices.pair(d.pair); } catch (error) { if (!/cancel/i.test(error.message)) showError("Could not connect. " + error.message); } return renderSection(); }
   if (d.forget) { devices.forget(d.forget); return renderSection(); }
   switch (d.act) {
+    case "simulator":
+      try { await devices.connectSimulator("trainer"); await devices.connectSimulator("heart"); } catch (error) { showError(error.message); }
+      return renderSection();
     case "tab": ui.favoritesOnly = d.tab === "Saved"; return render();
     case "favorite": {
       const favs = favorites();
@@ -773,7 +846,9 @@ function applyTheme() { document.documentElement.dataset.theme = prefs.get("appe
     app.innerHTML = `<div class="unsupported"><h1 class="heading" style="font-size:28px">Can't open ride storage</h1><p class="muted">This browser blocked local storage (private windows often do). Open lapped.fit/trainer in a normal Chrome or Edge window.</p></div>`;
     return;
   }
-  const rides = await model.store.rides();
+  await loadStrava();
+  await syncAccount();
+  const rides = (await model.store.rides()).filter(account.mine);
   const unfinished = rides.filter((r) => r.state !== "finished").sort((a, b) => b.started - a.started)[0];
   if (unfinished) {
     model.ride = { ...unfinished, state: "paused" };
@@ -783,7 +858,6 @@ function applyTheme() { document.documentElement.dataset.theme = prefs.get("appe
     model.notice = "Recovered your ride in progress. It's paused: press Resume to keep going.";
   }
   await refreshHistory();
-  await loadStrava();
   if (["localhost", "127.0.0.1"].includes(location.hostname) && new URLSearchParams(location.search).has("simulate")) devices.simulate();
   if (new URLSearchParams(location.search).has("connected")) {
     history.replaceState(null, "", "/trainer/");
