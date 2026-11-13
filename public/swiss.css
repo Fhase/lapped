@@ -2,7 +2,7 @@
    Loaded last on each page: it remaps each page's own tokens to the trainer's (black, Archivo, DIN numbers, amber).
    Token names differ per page (--paper/--ink/--red on main, --line/--accent on admin, --orange on overlay), so all are set here.
    Deliberately plain: hairline rules, sentence-case labels, one amber action per screen, no glows, no decorative motion. */
-@font-face { font-family: "Archivo"; src: url("/fonts/archivo/Archivo.ttf") format("truetype"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Archivo"; src: url("/fonts/archivo/Archivo.ttf") format("truetype"); font-weight: 100 900; font-display: block; }
 
 html:not([data-theme="light"]) {
   color-scheme: dark;
@@ -83,6 +83,8 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 h1 { font-size: clamp(56px, 8.7vw, 108px); }
 .route-card { background: transparent; border: 1px solid var(--line); }
 .route-card::after { display: none; }
+/* No staggered fade-up on load: it read as a glitch next to the font arriving */
+.copy, .route-card, .connect-card, .notes { animation: none; }
 .route-card:hover { transform: none; }
 .rider { fill: var(--ink); }
 .start { fill: var(--paper); stroke: var(--ink); }
